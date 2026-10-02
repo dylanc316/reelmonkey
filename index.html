@@ -1,43 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Site</title>
-
-  <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: system-ui, sans-serif;
-      background: #fff;
-      color: #111;
-    }
-
-    main {
-      max-width: 600px;
-      padding: 40px;
-      text-align: center;
-    }
-
-    h1 {
-      font-size: 48px;
-      margin-bottom: 16px;
-    }
-
-    p {
-      font-size: 20px;
-      color: #666;
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reelvest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3f1ee;
+    --ink: #14161f;
+    --muted: #666a78;
+    --panel: #2a2bd6;
+    --panel-ink: #f3f1ee;
+    --accent: #ff4d2e;
+    --line: #d9d5cf;
+    --danger: #b3261e;
+    --ok: #1c7a45;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  .split { display: grid; grid-template-columns: 1.1fr 1fr; min-height: 100%; }
+  .brand {
+    background: var(--panel); color: var(--panel-ink);
+    padding: 3rem; display: flex; flex-direction: column; justify-content: space-between;
+    overflow: hidden;
+  }
+  .brand h1 {
+    font-size: clamp(3.5rem, 11vw, 9rem); line-height: .85; margin: 0;
+    font-weight: 800; letter-spacing: -.04em;
+  }
+  .brand p { max-width: 28ch; font-size: 1.25rem; margin: 0; }
+  .form-side { display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .card { width: 100%; max-width: 380px; }
+  h2 { font-size: 2rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  .sub { color: var(--muted); margin: 0 0 1.75rem; }
+  label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .3rem; }
+  input {
+    width: 100%; font: inherit; padding: .7rem .8rem; margin-bottom: 1rem;
+    background: #fff; border: 1.5px solid var(--line); border-radius: 6px; color: var(--ink);
+  }
+  input:focus-visible, button:focus-visible, .link:focus-visible { outline: 3px solid var(--panel); outline-offset: 2px; }
+  button.primary {
+    width: 100%; font: inherit; font-weight: 600; padding: .8rem; cursor: pointer;
+    background: var(--ink); color: var(--bg); border: 0; border-radius: 6px;
+  }
+  button.primary:hover { background: var(--panel); }
+  button.primary:disabled { opacity: .6; cursor: wait; }
+  .msg { min-height: 1.4rem; margin: 0 0 1rem; font-size: .95rem; }
+  .msg.error { color: var(--danger); }
+  .msg.ok { color: var(--ok); }
+  .switch { margin-top: 1.25rem; color: var(--muted); font-size: .95rem; }
+  .link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline; cursor: pointer; }
+  .balance { font-size: 3.5rem; font-weight: 800; letter-spacing: -.03em; margin: .5rem 0 1.5rem; }
+  .balance small { font-size: 1rem; font-weight: 400; color: var(--muted); letter-spacing: 0; display: block; }
+  .hidden { display: none !important; }
+  .config-warning { background: var(--accent); color: #fff; padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: .9rem; }
+  @media (max-width: 760px) {
+    .split { grid-template-columns: 1fr; }
+    .brand { padding: 1.5rem; gap: 1.5rem; }
+    .brand h1 { font-size: 4rem; }
+  }
+</style>
 </head>
-
 <body>
-  <main>
-    <h1>Reels investor</h1>
-  </main>
+<div class="split">
+  <section class="brand">
+    <h1>Reel<br>vest</h1>
+    <p>Post a reel. Back the ones that blow up. Everyone who got in early gets paid.</p>
+  </section>
+
+  <section class="form-side">
+    <div class="card">
+      <div id="config-warning" class="config-warning hidden">
+        Add your Supabase URL and anon key at the top of the script in index.html.
+      </div>
+
+      <!-- Signed-out view -->
+      <div id="auth-view">
+        <h2 id="auth-title">Create your account</h2>
+        <p class="sub" id="auth-sub">You start with $1,000 in play money.</p>
+
+        <div id="username-wrap">
+          <label for="username">Username</label>
+          <input id="username" autocomplete="username" maxlength="20" placeholder="letters, numbers, underscores">
+        </div>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" minlength="8">
+
+        <p id="msg" class="msg" role="status" aria-live="polite"></p>
+        <button id="submit" class="primary">Create account</button>
+
+        <p class="switch">
+          <span id="switch-text">Already have an account?</span>
+          <button id="switch-btn" class="link">Log in</button>
+        </p>
+      </div>
+
+      <!-- Signed-in view (placeholder until the feed exists) -->
+      <div id="home-view" class="hidden">
+        <h2 id="welcome">Welcome</h2>
+        <div class="balance"><small>Your balance</small><span id="balance">$0.00</span></div>
+        <p class="sub">Reels, comments and investing are coming next.</p>
+        <button id="logout" class="primary">Log out</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // ---- 1. Paste your own values (Supabase > Project Settings > API) ----
+  const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcmlweG1hcmdyd29wd2lxcmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4ODUxMDgsImV4cCI6MjEwNjQ2MTEwOH0.ho5Shz5eQZDyuiCWwlcd6V8qoc8rrstVXiu_-uFfhzU";
+  // The anon key is safe to expose in the browser; Row Level Security protects the data.
+
+  const $ = (id) => document.getElementById(id);
+  const configured = !SUPABASE_URL.startsWith("YOUR_");
+  if (!configured) $("config-warning").classList.remove("hidden");
+  const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  let mode = "signup"; // or "login"
+
+  function setMsg(text, kind = "") { $("msg").textContent = text; $("msg").className = "msg " + kind; }
+
+  function setMode(next) {
+    mode = next;
+    const signup = mode === "signup";
+    $("auth-title").textContent = signup ? "Create your account" : "Log in";
+    $("auth-sub").textContent = signup ? "You start with $1,000 in play money." : "Welcome back.";
+    $("username-wrap").classList.toggle("hidden", !signup);
+    $("submit").textContent = signup ? "Create account" : "Log in";
+    $("switch-text").textContent = signup ? "Already have an account?" : "New here?";
+    $("switch-btn").textContent = signup ? "Log in" : "Create account";
+    $("password").autocomplete = signup ? "new-password" : "current-password";
+    setMsg("");
+  }
+
+  async function showHome(user) {
+    $("auth-view").classList.add("hidden");
+    $("home-view").classList.remove("hidden");
+    const { data, error } = await sb.from("profiles").select("username, balance").eq("id", user.id).single();
+    if (error || !data) { $("welcome").textContent = "Welcome"; return; }
+    $("welcome").textContent = "Hi, @" + data.username;
+    $("balance").textContent = Number(data.balance).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  }
+
+  function showAuth() {
+    $("home-view").classList.add("hidden");
+    $("auth-view").classList.remove("hidden");
+  }
+
+  async function submit() {
+    if (!sb) return setMsg("Supabase isn't configured yet.", "error");
+    const email = $("email").value.trim();
+    const password = $("password").value;
+    const username = $("username").value.trim();
+
+    if (!email || !password) return setMsg("Enter your email and password.", "error");
+    if (mode === "signup") {
+      if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return setMsg("Username must be 3–20 letters, numbers or underscores.", "error");
+      if (password.length < 8) return setMsg("Password must be at least 8 characters.", "error");
+    }
+
+    $("submit").disabled = true;
+    setMsg("");
+    try {
+      if (mode === "signup") {
+        const { data, error } = await sb.auth.signUp({
+          email, password,
+          options: { data: { username }, emailRedirectTo: window.location.origin }
+        });
+        if (error) throw error;
+        if (!data.session) setMsg("Check your email to confirm your account, then log in.", "ok");
+      } else {
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err) {
+      const text = /profiles_username_key|duplicate key|Database error/i.test(err.message)
+        ? "That username is taken. Try another."
+        : err.message;
+      setMsg(text, "error");
+    } finally {
+      $("submit").disabled = false;
+    }
+  }
+
+  $("submit").addEventListener("click", submit);
+  ["email", "password", "username"].forEach((id) =>
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
+  $("switch-btn").addEventListener("click", () => setMode(mode === "signup" ? "login" : "signup"));
+  $("logout").addEventListener("click", async () => { await sb.auth.signOut(); });
+
+  if (sb) {
+    sb.auth.onAuthStateChange((_event, session) => {
+      if (session) showHome(session.user); else showAuth();
+    });
+  }
+</script>
 </body>
 </html>
