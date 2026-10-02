@@ -66,6 +66,38 @@
     .brand { padding: 1.5rem; gap: 1.5rem; }
     .brand h1 { font-size: 4rem; }
   }
+  /* Signed-in layout: hide the blue brand panel and use the full width */
+  body.app .split { grid-template-columns: 1fr; }
+  body.app .brand { display: none; }
+  body.app .form-side { align-items: flex-start; padding: 2rem 1.25rem; }
+  body.app .card { max-width: 920px; }
+  
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+  .topbar h2 { margin: 0; }
+  .topbar .bal { color: var(--muted); }
+  button.ghost { font: inherit; font-weight: 600; padding: .5rem .9rem; cursor: pointer; background: none; color: var(--ink); border: 1.5px solid var(--line); border-radius: 6px; }
+  button.ghost:hover { border-color: var(--ink); }
+  button.danger { font: inherit; font-weight: 600; padding: .5rem .9rem; cursor: pointer; background: none; color: var(--danger); border: 1.5px solid var(--danger); border-radius: 6px; }
+  button.danger:hover { background: var(--danger); color: #fff; }
+  
+  .upload { background: #fff; border: 1.5px solid var(--line); border-radius: 10px; padding: 1.25rem; margin-bottom: 2rem; }
+  .upload h3, .reels-title { margin: 0 0 .75rem; font-size: 1.25rem; letter-spacing: -.01em; }
+  textarea { width: 100%; font: inherit; padding: .7rem .8rem; margin-bottom: 1rem; border: 1.5px solid var(--line); border-radius: 6px; resize: vertical; min-height: 4.5rem; color: var(--ink); }
+  textarea:focus-visible { outline: 3px solid var(--panel); outline-offset: 2px; }
+  
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .75rem; }
+  .thumb { padding: 0; border: 0; background: var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; aspect-ratio: 9 / 16; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb:hover { outline: 3px solid var(--panel); }
+  .thumb:focus-visible { outline: 3px solid var(--panel); outline-offset: 2px; }
+  .empty { color: var(--muted); }
+  
+  dialog#player { border: 0; border-radius: 12px; padding: 1rem; width: min(92vw, 460px); background: var(--bg); color: var(--ink); }
+  dialog#player::backdrop { background: rgba(20, 22, 31, .75); }
+  dialog#player video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; display: block; }
+  #player-caption { margin: .9rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #player-caption.none { color: var(--muted); }
+  .player-actions { display: flex; justify-content: space-between; gap: .5rem; }
 </style>
 </head>
 <body>
@@ -108,12 +140,29 @@
         </p>
       </div>
 
-      <!-- Signed-in view (placeholder until the feed exists) -->
+      <!-- Signed-in view: profile -->
       <div id="home-view" class="hidden">
-        <h2 id="welcome">Welcome</h2>
-        <div class="balance"><small>Your balance</small><span id="balance">$0.00</span></div>
-        <p class="sub">Reels, comments and investing are coming next.</p>
-        <button id="logout" class="primary">Log out</button>
+        <div class="topbar">
+          <div>
+            <h2 id="welcome">Welcome</h2>
+            <span class="bal">Balance: <strong id="balance">$0.00</strong></span>
+          </div>
+          <button id="logout" class="ghost">Log out</button>
+        </div>
+      
+        <section class="upload">
+          <h3>Upload a reel</h3>
+          <label for="video-file">Video (MP4 or WebM, up to 50 MB and 90 seconds)</label>
+          <input id="video-file" type="file" accept="video/mp4,video/webm,.mp4,.webm">
+          <label for="caption">Caption (optional)</label>
+          <textarea id="caption" maxlength="300"></textarea>
+          <p id="upload-msg" class="msg" role="status" aria-live="polite"></p>
+          <button id="upload-btn" class="primary">Upload reel</button>
+        </section>
+      
+        <h3 class="reels-title">Your reels</h3>
+        <div id="grid" class="grid"></div>
+        <p id="empty" class="empty hidden">You haven't uploaded anything yet.</p>
       </div>
 
       <!-- Password recovery view -->
@@ -128,6 +177,15 @@
     </div>
   </section>
 </div>
+
+<dialog id="player" aria-label="Reel player">
+  <video id="player-video" controls playsinline></video>
+  <p id="player-caption"></p>
+  <div class="player-actions">
+    <button id="player-delete" class="danger">Delete reel</button>
+    <button id="player-close" class="ghost">Close</button>
+  </div>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -152,6 +210,7 @@
     $("auth-view").classList.toggle("hidden", name !== "auth");
     $("home-view").classList.toggle("hidden", name !== "home");
     $("recovery-view").classList.toggle("hidden", name !== "recovery");
+    document.body.classList.toggle("app", name === "home");
   }
 
   function setMode(next) {
@@ -171,11 +230,14 @@
   }
 
   async function showHome(user) {
+    currentUser = user;
     showView("home");
-    const { data, error } = await sb.from("profiles").select("username, balance").eq("id", user.id).single();
-    if (error || !data) { $("welcome").textContent = "Welcome"; return; }
-    $("welcome").textContent = "Hi, @" + data.username;
-    $("balance").textContent = Number(data.balance).toLocaleString("en-US", { style: "currency", currency: "USD" });
+    const { data } = await sb.from("profiles").select("username, balance").eq("id", user.id).single();
+    if (data) {
+      $("welcome").textContent = "@" + data.username;
+      $("balance").textContent = Number(data.balance).toLocaleString("en-US", { style: "currency", currency: "USD" });
+    }
+    loadReels();
   }
 
   async function submit() {
@@ -236,6 +298,156 @@
     showHome(data.user);
   }
 
+  // ---------- Reels ----------
+  const BUCKET = "reels";
+  const MAX_MB = 50;
+  const MAX_SECONDS = 90;
+  const ALLOWED_TYPES = ["video/mp4", "video/webm"];
+  let currentUser = null;
+  let reels = [];
+  let openReel = null;
+  
+  const publicUrl = (path) => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  function setUploadMsg(text, kind = "") { $("upload-msg").textContent = text; $("upload-msg").className = "msg " + kind; }
+  
+  // Grabs a frame from the video in the browser and returns it as a JPEG blob
+  function makeThumbnail(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.muted = true;
+      v.playsInline = true;
+      const done = (fn, val) => { URL.revokeObjectURL(url); fn(val); };
+  
+      v.onloadedmetadata = () => {
+        if (!isFinite(v.duration) || v.duration <= 0) return done(reject, new Error("Couldn't read this video."));
+        if (v.duration > MAX_SECONDS) return done(reject, new Error(`Videos can be at most ${MAX_SECONDS} seconds.`));
+        v.currentTime = Math.min(1, v.duration / 2);
+      };
+      v.onseeked = () => {
+        const scale = Math.min(1, 480 / v.videoWidth);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(v.videoWidth * scale);
+        canvas.height = Math.round(v.videoHeight * scale);
+        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!blob) return done(reject, new Error("Couldn't create a thumbnail for this video."));
+          done(resolve, { blob, duration: v.duration });
+        }, "image/jpeg", 0.8);
+      };
+      v.onerror = () => done(reject, new Error("Couldn't read this video. Try an MP4 or WebM file."));
+      v.src = url;
+    });
+  }
+  
+  async function uploadReel() {
+    const file = $("video-file").files[0];
+    if (!file) return setUploadMsg("Choose a video first.", "error");
+    if (!ALLOWED_TYPES.includes(file.type)) return setUploadMsg("Only MP4 and WebM videos are supported.", "error");
+    if (file.size > MAX_MB * 1024 * 1024) return setUploadMsg(`Video must be under ${MAX_MB} MB.`, "error");
+  
+    const id = crypto.randomUUID();
+    const base = `${currentUser.id}/${id}`;
+    const videoPath = `${base}.${file.type === "video/webm" ? "webm" : "mp4"}`;
+    const thumbPath = `${base}.jpg`;
+  
+    $("upload-btn").disabled = true;
+    setUploadMsg("Preparing video…");
+    try {
+      const { blob, duration } = await makeThumbnail(file);
+  
+      setUploadMsg("Uploading…");
+      let res = await sb.storage.from(BUCKET).upload(videoPath, file, { contentType: file.type, cacheControl: "3600" });
+      if (res.error) throw res.error;
+      res = await sb.storage.from(BUCKET).upload(thumbPath, blob, { contentType: "image/jpeg", cacheControl: "3600" });
+      if (res.error) throw res.error;
+  
+      const { error } = await sb.from("reels").insert({
+        id,
+        user_id: currentUser.id,
+        caption: $("caption").value.trim() || null,
+        video_path: videoPath,
+        thumb_path: thumbPath,
+        duration_seconds: Math.round(duration * 100) / 100
+      });
+      if (error) throw error;
+  
+      $("video-file").value = "";
+      $("caption").value = "";
+      setUploadMsg("Uploaded!", "ok");
+      loadReels();
+    } catch (err) {
+      // Don't leave orphaned files behind if any step failed
+      await sb.storage.from(BUCKET).remove([videoPath, thumbPath]);
+      setUploadMsg(err.message || "Upload failed. Try again.", "error");
+    } finally {
+      $("upload-btn").disabled = false;
+    }
+  }
+  
+  async function loadReels() {
+    const { data, error } = await sb.from("reels").select("*")
+      .eq("user_id", currentUser.id)
+      .order("created_at", { ascending: false });
+    if (error) return;
+    reels = data;
+  
+    const grid = $("grid");
+    grid.replaceChildren();
+    reels.forEach((reel) => {
+      const btn = document.createElement("button");
+      btn.className = "thumb";
+      btn.setAttribute("aria-label", "Play reel" + (reel.caption ? ": " + reel.caption : ""));
+      const img = document.createElement("img");
+      img.src = publicUrl(reel.thumb_path);
+      img.alt = "";
+      img.loading = "lazy";
+      btn.appendChild(img);
+      btn.addEventListener("click", () => openPlayer(reel));
+      grid.appendChild(btn);
+    });
+    $("empty").classList.toggle("hidden", reels.length > 0);
+  }
+  
+  function openPlayer(reel) {
+    openReel = reel;
+    $("player-video").src = publicUrl(reel.video_path);
+    const cap = $("player-caption");
+    cap.textContent = reel.caption || "No caption";
+    cap.classList.toggle("none", !reel.caption);
+    $("player").showModal();
+    $("player-video").play().catch(() => {}); // autoplay may be blocked; controls still work
+  }
+  
+  function closePlayer() { $("player").close(); }
+  
+  $("player").addEventListener("close", () => {
+    $("player-video").pause();
+    $("player-video").removeAttribute("src");
+    $("player-video").load();
+    openReel = null;
+  });
+  
+  async function deleteReel() {
+    if (!openReel) return;
+    if (!confirm("Delete this reel permanently? This can't be undone.")) return;
+    const reel = openReel;
+  
+    // Delete the database row first so it disappears from the profile immediately
+    const { data, error } = await sb.from("reels").delete().eq("id", reel.id).select();
+    if (error || !data || data.length === 0) return alert("Couldn't delete this reel. Try again.");
+    await sb.storage.from(BUCKET).remove([reel.video_path, reel.thumb_path]);
+  
+    closePlayer();
+    loadReels();
+  }
+  
+  $("upload-btn").addEventListener("click", uploadReel);
+  $("player-close").addEventListener("click", closePlayer);
+  $("player-delete").addEventListener("click", deleteReel);
+  $("player").addEventListener("click", (e) => { if (e.target === $("player")) closePlayer(); }); // click backdrop to close
+  
   $("submit").addEventListener("click", submit);
   ["email", "password", "username"].forEach((id) =>
     $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
