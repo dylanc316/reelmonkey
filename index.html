@@ -92,11 +92,15 @@
         </div>
         <label for="email">Email</label>
         <input id="email" type="email" autocomplete="email">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" minlength="8">
+        <div id="password-wrap">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" minlength="8">
+        </div>
 
         <p id="msg" class="msg" role="status" aria-live="polite"></p>
         <button id="submit" class="primary">Create account</button>
+
+        <p class="switch" id="forgot-wrap"><button id="forgot-btn" class="link">Forgot password?</button></p>
 
         <p class="switch">
           <span id="switch-text">Already have an account?</span>
@@ -111,51 +115,67 @@
         <p class="sub">Reels, comments and investing are coming next.</p>
         <button id="logout" class="primary">Log out</button>
       </div>
+
+      <!-- Password recovery view -->
+      <div id="recovery-view" class="hidden">
+        <h2>Choose a new password</h2>
+        <p class="sub">Use at least 8 characters.</p>
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="8">
+        <p id="recovery-msg" class="msg" role="status" aria-live="polite"></p>
+        <button id="save-password" class="primary">Save new password</button>
+      </div>
     </div>
   </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ---- 1. Paste your own values (Supabase > Project Settings > API) ----
+  // ---- Paste your own values (Supabase > Project Settings > API) ----
   const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcmlweG1hcmdyd29wd2lxcmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4ODUxMDgsImV4cCI6MjEwNjQ2MTEwOH0.ho5Shz5eQZDyuiCWwlcd6V8qoc8rrstVXiu_-uFfhzU";
-  // The anon key is safe to expose in the browser; Row Level Security protects the data.
 
   const $ = (id) => document.getElementById(id);
   const configured = !SUPABASE_URL.startsWith("YOUR_");
   if (!configured) $("config-warning").classList.remove("hidden");
+
+  // Must be read before the Supabase client clears the URL hash
+  let recovering = window.location.hash.includes("type=recovery");
   const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-  let mode = "signup"; // or "login"
+  let mode = "signup"; // "signup" | "login" | "forgot"
 
   function setMsg(text, kind = "") { $("msg").textContent = text; $("msg").className = "msg " + kind; }
+  function setRecoveryMsg(text, kind = "") { $("recovery-msg").textContent = text; $("recovery-msg").className = "msg " + kind; }
+
+  function showView(name) {
+    $("auth-view").classList.toggle("hidden", name !== "auth");
+    $("home-view").classList.toggle("hidden", name !== "home");
+    $("recovery-view").classList.toggle("hidden", name !== "recovery");
+  }
 
   function setMode(next) {
     mode = next;
-    const signup = mode === "signup";
-    $("auth-title").textContent = signup ? "Create your account" : "Log in";
-    $("auth-sub").textContent = signup ? "You start with $1,000 in play money." : "Welcome back.";
+    const signup = mode === "signup", forgot = mode === "forgot";
+    $("auth-title").textContent = signup ? "Create your account" : forgot ? "Reset your password" : "Log in";
+    $("auth-sub").textContent = signup ? "You start with $1,000 in play money."
+      : forgot ? "We'll email you a link to choose a new password." : "Welcome back.";
     $("username-wrap").classList.toggle("hidden", !signup);
-    $("submit").textContent = signup ? "Create account" : "Log in";
-    $("switch-text").textContent = signup ? "Already have an account?" : "New here?";
-    $("switch-btn").textContent = signup ? "Log in" : "Create account";
+    $("password-wrap").classList.toggle("hidden", forgot);
+    $("forgot-wrap").classList.toggle("hidden", mode !== "login");
+    $("submit").textContent = signup ? "Create account" : forgot ? "Send reset link" : "Log in";
+    $("switch-text").textContent = signup ? "Already have an account?" : forgot ? "Remembered it?" : "New here?";
+    $("switch-btn").textContent = signup ? "Log in" : forgot ? "Back to log in" : "Create account";
     $("password").autocomplete = signup ? "new-password" : "current-password";
     setMsg("");
   }
 
   async function showHome(user) {
-    $("auth-view").classList.add("hidden");
-    $("home-view").classList.remove("hidden");
+    showView("home");
     const { data, error } = await sb.from("profiles").select("username, balance").eq("id", user.id).single();
     if (error || !data) { $("welcome").textContent = "Welcome"; return; }
     $("welcome").textContent = "Hi, @" + data.username;
     $("balance").textContent = Number(data.balance).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  }
-
-  function showAuth() {
-    $("home-view").classList.add("hidden");
-    $("auth-view").classList.remove("hidden");
   }
 
   async function submit() {
@@ -163,6 +183,16 @@
     const email = $("email").value.trim();
     const password = $("password").value;
     const username = $("username").value.trim();
+
+    if (mode === "forgot") {
+      if (!email) return setMsg("Enter your email.", "error");
+      $("submit").disabled = true;
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+      $("submit").disabled = false;
+      if (error) return setMsg(error.message, "error");
+      // Same message whether or not the account exists, so emails can't be probed
+      return setMsg("If an account exists for that email, a reset link is on its way.", "ok");
+    }
 
     if (!email || !password) return setMsg("Enter your email and password.", "error");
     if (mode === "signup") {
@@ -194,15 +224,33 @@
     }
   }
 
+  async function saveNewPassword() {
+    const pw = $("new-password").value;
+    if (pw.length < 8) return setRecoveryMsg("Password must be at least 8 characters.", "error");
+    $("save-password").disabled = true;
+    const { data, error } = await sb.auth.updateUser({ password: pw });
+    $("save-password").disabled = false;
+    if (error) return setRecoveryMsg(error.message, "error");
+    recovering = false;
+    $("new-password").value = "";
+    showHome(data.user);
+  }
+
   $("submit").addEventListener("click", submit);
   ["email", "password", "username"].forEach((id) =>
     $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
-  $("switch-btn").addEventListener("click", () => setMode(mode === "signup" ? "login" : "signup"));
+  $("switch-btn").addEventListener("click", () => setMode(mode === "signup" ? "login" : mode === "login" ? "signup" : "login"));
+  $("forgot-btn").addEventListener("click", () => setMode("forgot"));
+  $("save-password").addEventListener("click", saveNewPassword);
+  $("new-password").addEventListener("keydown", (e) => { if (e.key === "Enter") saveNewPassword(); });
   $("logout").addEventListener("click", async () => { await sb.auth.signOut(); });
 
   if (sb) {
-    sb.auth.onAuthStateChange((_event, session) => {
-      if (session) showHome(session.user); else showAuth();
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") recovering = true;
+      if (recovering && session) showView("recovery");
+      else if (session) showHome(session.user);
+      else { showView("auth"); }
     });
   }
 </script>
