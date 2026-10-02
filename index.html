@@ -37,11 +37,12 @@
     font-weight: 800; letter-spacing: -.04em;
   }
   .brand .subtitle {
-    font-size: 1rem;
+    font-size: clamp(1.25rem, 3vw, 2.25rem);
+    font-weight: 600;
     max-width: none;
     margin: 1rem 0 0;
-    opacity: .75;
-    letter-spacing: .02em;
+    opacity: .9;
+    letter-spacing: -.01em;
   }
   .brand p { max-width: 28ch; font-size: 1.25rem; margin: 0; }
   .form-side { display: flex; align-items: center; justify-content: center; padding: 2rem; }
@@ -73,6 +74,7 @@
     .split { grid-template-columns: 1fr; }
     .brand { padding: 1.5rem; gap: 1.5rem; }
     .brand h1 { font-size: 4rem; }
+    .brand .subtitle { font-size: 1.5rem; }
   }
   /* Signed-in layout: hide the blue brand panel and use the full width */
   body.app .split { grid-template-columns: 1fr; }
