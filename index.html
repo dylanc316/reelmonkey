@@ -205,6 +205,61 @@
   #player-caption.none { color: var(--muted); }
   .player-actions { display: flex; justify-content: space-between; gap: .5rem; }
 
+  /* ---------- Trading ---------- */
+  .stat-row { display: flex; gap: .75rem; }
+  .section { margin-bottom: 1rem; }
+  .panel-head button.ghost { padding: .3rem .7rem; font-size: .82rem; }
+
+  .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .9rem; }
+  .mcard { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .mcard .thumb { aspect-ratio: 4 / 5; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+  .mcard .thumb:hover { transform: none; box-shadow: none; }
+  .mcard-body { display: flex; flex-direction: column; gap: .6rem; padding: .75rem; }
+  .mcard-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+  .price { font-family: var(--mono); font-size: 1.3rem; font-weight: 600; letter-spacing: -.02em; }
+  .likes { font-family: var(--mono); font-size: .8rem; color: var(--muted); }
+  .mcard-meta { margin-top: -.45rem; font-size: .82rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .votes { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+  .vote { font: inherit; font-size: .82rem; font-weight: 500; padding: .4rem; cursor: pointer; background: var(--surface); color: var(--ink-2); border: 1px solid var(--line-strong); border-radius: 7px; }
+  .vote:hover { border-color: var(--ink); }
+  .vote.on-up { background: rgba(22,163,74,.1); border-color: var(--up); color: var(--up); }
+  .vote.on-down { background: rgba(220,38,38,.08); border-color: var(--down); color: var(--down); }
+  .trade { display: flex; gap: .4rem; }
+  input.qty { width: 4.75rem; flex: none; margin: 0; padding: .4rem .5rem; font-family: var(--mono); font-size: .88rem; }
+  button.buy, button.sell { flex: 1; font: inherit; font-size: .85rem; font-weight: 600; padding: .4rem .75rem; cursor: pointer; color: #fff; border: 0; border-radius: 7px; }
+  button.buy { background: var(--up); }
+  button.buy:hover { background: #15803d; }
+  button.sell { background: var(--ink); }
+  button.sell:hover { background: #262b36; }
+  button.buy:disabled { background: var(--line-strong); cursor: not-allowed; }
+  .held { font-size: .8rem; color: var(--muted); }
+  .held b { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+
+  .table-wrap { overflow-x: auto; }
+  table.positions { width: 100%; min-width: 680px; border-collapse: collapse; font-size: .88rem; }
+  .positions th { text-align: left; padding: 0 .6rem .6rem; font-size: .72rem; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .positions td { padding: .65rem .6rem; vertical-align: middle; border-bottom: 1px solid var(--line); }
+  .positions tbody tr:last-child td { border-bottom: 0; }
+  .positions .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+  .positions th.num { font-family: inherit; }
+  .pos-reel { display: flex; align-items: center; gap: .65rem; }
+  .pos-reel .thumb { width: 34px; flex: none; }
+  .pos-reel span { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gain { color: var(--up); }
+  .loss { color: var(--down); }
+  .sell-cell { display: flex; justify-content: flex-end; gap: .4rem; }
+  .sell-cell button.sell { flex: none; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 1.25rem; z-index: 20; max-width: min(92vw, 440px);
+    padding: .7rem 1rem; border-radius: 8px; background: var(--ink); color: #fff; font-size: .9rem;
+    box-shadow: 0 12px 32px rgba(11,13,18,.25);
+    transform: translate(-50%, 160%); transition: transform .2s; pointer-events: none;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast.error { background: var(--danger); }
+  .toast.ok { background: var(--ok); }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
@@ -221,6 +276,9 @@
     .container { padding: 1.5rem 1rem 0; }
     .appbar-inner { padding: .75rem 1rem; }
     .user-chip { display: none; }
+    .topbar { grid-template-columns: 1fr; }
+    .stat-row .stat { flex: 1; }
+    .market-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   }
 </style>
 </head>
@@ -229,7 +287,7 @@
   <section class="brand">
     <div class="brand-title">
       <h1>Reel<br>Monkey</h1>
-      <p class="eyebrow"><span class="dot"></span>Stock and Prediction Markets for Instagram Reels</p>
+      <p class="eyebrow"><span class="dot"></span>Prediction Markets for Instagram Reels</p>
     </div>
 
     <div class="market" aria-hidden="true">
@@ -298,11 +356,51 @@
         <div class="container">
           <div class="topbar">
             <h2 id="welcome">Welcome</h2>
-            <div class="stat">
-              <div class="stat-label">Balance</div>
-              <div class="stat-value" id="balance">$0.00</div>
+            <div class="stat-row">
+              <div class="stat">
+                <div class="stat-label">Balance</div>
+                <div class="stat-value" id="balance">$0.00</div>
+              </div>
+              <div class="stat">
+                <div class="stat-label">Holdings</div>
+                <div class="stat-value" id="holdings">$0.00</div>
+              </div>
             </div>
           </div>
+
+          <section class="panel section">
+            <div class="panel-head">
+              <h3>Market</h3>
+              <button id="market-refresh" class="ghost">Refresh</button>
+            </div>
+            <div class="panel-body">
+              <div id="market" class="market-grid"></div>
+              <p id="market-empty" class="empty hidden">No reels have been listed yet.</p>
+            </div>
+          </section>
+
+          <section class="panel section">
+            <div class="panel-head"><h3>Portfolio</h3></div>
+            <div class="panel-body">
+              <div id="positions-wrap" class="table-wrap hidden">
+                <table class="positions">
+                  <thead>
+                    <tr>
+                      <th>Reel</th>
+                      <th class="num">Shares</th>
+                      <th class="num">Avg cost</th>
+                      <th class="num">Price</th>
+                      <th class="num">Value</th>
+                      <th class="num">Gain/loss</th>
+                      <th class="num">Sell</th>
+                    </tr>
+                  </thead>
+                  <tbody id="positions-body"></tbody>
+                </table>
+              </div>
+              <p id="portfolio-empty" class="empty">You don't own any shares yet.</p>
+            </div>
+          </section>
 
           <div class="layout">
             <section class="panel upload">
@@ -352,6 +450,8 @@
   </div>
 </dialog>
 
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   // ---- Paste your own values (Supabase > Project Settings > API) ----
@@ -397,12 +497,16 @@
   async function showHome(user) {
     currentUser = user;
     showView("home");
+    const bonus = await sb.rpc("collect_daily_bonus");
+    if (!bonus.error && Number(bonus.data) > 0) toast(`${money(bonus.data)} daily bonus added to your balance.`, "ok");
     const { data } = await sb.from("profiles").select("username, balance").eq("id", user.id).single();
     if (data) {
       $("welcome").textContent = "@" + data.username;
       $("balance").textContent = Number(data.balance).toLocaleString("en-US", { style: "currency", currency: "USD" });
     }
     loadReels();
+    loadMarket();
+    loadPortfolio();
   }
 
   async function submit() {
@@ -542,6 +646,7 @@
       $("caption").value = "";
       setUploadMsg("Uploaded!", "ok");
       loadReels();
+      loadMarket();
     } catch (err) {
       // Don't leave orphaned files behind if any step failed
       await sb.storage.from(BUCKET).remove([videoPath, thumbPath]);
@@ -581,6 +686,8 @@
     const cap = $("player-caption");
     cap.textContent = reel.caption || "No caption";
     cap.classList.toggle("none", !reel.caption);
+    // Only the owner can delete. Market/portfolio rows carry is_mine; rows from "Your reels" carry user_id.
+    $("player-delete").classList.toggle("hidden", !(reel.is_mine ?? reel.user_id === currentUser.id));
     $("player").showModal();
     $("player-video").play().catch(() => {}); // autoplay may be blocked; controls still work
   }
@@ -606,7 +713,227 @@
 
     closePlayer();
     loadReels();
+    refreshTrading(); // holders were cashed out by the database when the reel was deleted
   }
+
+  // ---------- Trading ----------
+  // All money logic lives in the database (see trading.sql). The browser only
+  // displays prices and calls the vote/buy/sell functions; the server re-checks everything.
+  const REFRESH_MS = 15000;
+  let market = [];
+  let positions = [];
+  let tradeBusy = false;
+  let toastTimer = null;
+  const qtyDraft = {}; // keeps typed quantities across re-renders
+
+  const money = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  // Share prices are log10(likes) + 1, so they're fractional; show enough digits to see a single like move them.
+  const sharePrice = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  // Match the server: purchases round up to the cent, sales round down.
+  const cents = (n) => Number((n * 100).toFixed(6));
+  const costOf = (qty, price) => Math.ceil(cents(qty * price)) / 100;
+  const proceedsOf = (qty, price) => Math.floor(cents(qty * price)) / 100;
+  const plural = (n, word) => `${n.toLocaleString("en-US")} ${word}${Math.abs(n) === 1 ? "" : "s"}`;
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function toast(text, kind = "") {
+    const t = $("toast");
+    t.textContent = text;
+    t.className = "toast show " + kind;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
+  }
+
+  function thumbButton(reel) {
+    const btn = el("button", "thumb");
+    btn.setAttribute("aria-label", "Play reel" + (reel.caption ? ": " + reel.caption : ""));
+    const img = el("img");
+    img.src = publicUrl(reel.thumb_path);
+    img.alt = "";
+    img.loading = "lazy";
+    btn.appendChild(img);
+    btn.addEventListener("click", () => openPlayer(reel));
+    return btn;
+  }
+
+  function qtyInput(key, fallback) {
+    const input = el("input", "qty");
+    input.type = "number";
+    input.min = "1";
+    input.step = "1";
+    input.inputMode = "numeric";
+    input.value = qtyDraft[key] ?? String(fallback);
+    input.setAttribute("aria-label", "Number of shares");
+    input.addEventListener("input", () => { qtyDraft[key] = input.value; });
+    return input;
+  }
+
+  function readQty(input) {
+    const n = Number(input.value);
+    return Number.isInteger(n) && n >= 1 ? n : null;
+  }
+
+  async function loadBalance() {
+    const { data } = await sb.from("profiles").select("balance").eq("id", currentUser.id).single();
+    if (data) $("balance").textContent = money(data.balance);
+  }
+
+  async function loadMarket() {
+    const { data, error } = await sb.rpc("get_market");
+    if (error) return;
+    market = data;
+    renderMarket();
+  }
+
+  async function loadPortfolio() {
+    const { data, error } = await sb.rpc("get_portfolio");
+    if (error) return;
+    positions = data;
+    renderPortfolio();
+  }
+
+  function refreshTrading() {
+    return Promise.all([loadMarket(), loadPortfolio(), loadBalance()]);
+  }
+
+  function voteButton(reel, value) {
+    const active = reel.my_vote === value;
+    const btn = el("button", "vote" + (active ? (value > 0 ? " on-up" : " on-down") : ""),
+      value > 0 ? "▲ Like" : "▼ Dislike");
+    btn.setAttribute("aria-pressed", String(active));
+    // Clicking your current vote takes it back; clicking the other one switches it.
+    btn.addEventListener("click", () => vote(reel, active ? 0 : value));
+    return btn;
+  }
+
+  function renderMarket() {
+    const grid = $("market");
+    grid.replaceChildren();
+    market.forEach((reel) => {
+      const card = el("article", "mcard");
+      const body = el("div", "mcard-body");
+
+      const top = el("div", "mcard-top");
+      top.append(el("span", "price", reel.likes > 0 ? sharePrice(reel.price) : "—"), el("span", "likes", plural(reel.likes, "like")));
+      const meta = el("div", "mcard-meta",
+        [reel.owner_username && "@" + reel.owner_username, reel.caption].filter(Boolean).join(" · ") || " ");
+
+      const votes = el("div", "votes");
+      votes.append(voteButton(reel, 1), voteButton(reel, -1));
+
+      const trade = el("div", "trade");
+      const qty = qtyInput("buy:" + reel.id, 1);
+      const buyBtn = el("button", "buy", "Buy");
+      buyBtn.disabled = reel.likes <= 0;
+      if (reel.likes <= 0) buyBtn.title = "Reels need at least 1 like before they can be invested in";
+      buyBtn.addEventListener("click", () => buy(reel, qty));
+      trade.append(qty, buyBtn);
+
+      body.append(top, meta, votes, trade);
+      if (reel.my_shares > 0) {
+        const held = el("div", "held", "You own ");
+        held.append(el("b", "", plural(Number(reel.my_shares), "share")), ` · worth ${money(reel.my_shares * reel.price)}`);
+        body.append(held);
+      }
+      card.append(thumbButton(reel), body);
+      grid.appendChild(card);
+    });
+    $("market-empty").classList.toggle("hidden", market.length > 0);
+  }
+
+  function renderPortfolio() {
+    const tbody = $("positions-body");
+    tbody.replaceChildren();
+    let total = 0;
+    positions.forEach((p) => {
+      const shares = Number(p.shares);
+      const cost = Number(p.cost_basis);
+      const value = shares * Number(p.price);
+      const gain = value - cost;
+      total += value;
+
+      const tr = el("tr");
+      const reelCell = el("td");
+      const reelWrap = el("div", "pos-reel");
+      reelWrap.append(thumbButton(p),
+        el("span", "", [p.owner_username && "@" + p.owner_username, p.caption].filter(Boolean).join(" · ") || "Untitled reel"));
+      reelCell.append(reelWrap);
+
+      const pct = cost > 0 ? ` (${gain >= 0 ? "+" : ""}${((gain / cost) * 100).toFixed(1)}%)` : "";
+      const gainCell = el("td", "num " + (gain > 0 ? "gain" : gain < 0 ? "loss" : ""),
+        (gain > 0 ? "+" : "") + money(gain) + pct);
+
+      const sellCell = el("td");
+      const sellWrap = el("div", "sell-cell");
+      const qty = qtyInput("sell:" + p.id, shares);
+      qty.max = String(shares);
+      const sellBtn = el("button", "sell", "Sell");
+      sellBtn.addEventListener("click", () => sell(p, qty));
+      sellWrap.append(qty, sellBtn);
+      sellCell.append(sellWrap);
+
+      tr.append(
+        reelCell,
+        el("td", "num", shares.toLocaleString("en-US")),
+        el("td", "num", sharePrice(cost / shares)),
+        el("td", "num", sharePrice(p.price)),
+        el("td", "num", money(value)),
+        gainCell,
+        sellCell
+      );
+      tbody.appendChild(tr);
+    });
+    $("holdings").textContent = money(total);
+    $("positions-wrap").classList.toggle("hidden", positions.length === 0);
+    $("portfolio-empty").classList.toggle("hidden", positions.length > 0);
+  }
+
+  async function runRpc(fn, args, okText, draftKey) {
+    if (tradeBusy) return;
+    tradeBusy = true;
+    const { error } = await sb.rpc(fn, args);
+    tradeBusy = false;
+    if (error) toast(error.message, "error");
+    else {
+      if (draftKey) delete qtyDraft[draftKey];
+      if (okText) toast(okText, "ok");
+    }
+    await refreshTrading();
+  }
+
+  function vote(reel, value) {
+    return runRpc("vote_reel", { p_reel_id: reel.id, p_value: value });
+  }
+
+  function buy(reel, input) {
+    const qty = readQty(input);
+    if (!qty) return toast("Enter a whole number of shares.", "error");
+    return runRpc("buy_shares", { p_reel_id: reel.id, p_qty: qty, p_expected_price: reel.price },
+      `Bought ${plural(qty, "share")} for ${money(costOf(qty, reel.price))}.`, "buy:" + reel.id);
+  }
+
+  function sell(position, input) {
+    const qty = readQty(input);
+    if (!qty) return toast("Enter a whole number of shares.", "error");
+    if (qty > Number(position.shares)) return toast(`You only own ${plural(Number(position.shares), "share")}.`, "error");
+    return runRpc("sell_shares", { p_reel_id: position.id, p_qty: qty, p_expected_price: position.price },
+      `Sold ${plural(qty, "share")} for ${money(proceedsOf(qty, position.price))}.`, "sell:" + position.id);
+  }
+
+  // Keep prices fresh while the tab is open, but don't re-render under someone typing a quantity.
+  setInterval(() => {
+    if (!sb || !currentUser || document.hidden || tradeBusy || $("home-view").classList.contains("hidden")) return;
+    if (document.activeElement && document.activeElement.classList.contains("qty")) return;
+    refreshTrading();
+  }, REFRESH_MS);
+
+  $("market-refresh").addEventListener("click", refreshTrading);
 
   $("upload-btn").addEventListener("click", uploadReel);
   $("player-close").addEventListener("click", closePlayer);
