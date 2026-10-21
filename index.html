@@ -830,8 +830,9 @@
       const trade = el("div", "trade");
       const qty = qtyInput("buy:" + reel.id, 1);
       const buyBtn = el("button", "buy", "Buy");
-      buyBtn.disabled = reel.likes <= 0;
-      if (reel.likes <= 0) buyBtn.title = "Reels need at least 1 like before they can be invested in";
+      buyBtn.disabled = reel.likes <= 0 || reel.is_mine;
+      if (reel.is_mine) buyBtn.title = "You can't invest in your own reel";
+      else if (reel.likes <= 0) buyBtn.title = "Reels need at least 1 like before they can be invested in";
       buyBtn.addEventListener("click", () => buy(reel, qty));
       trade.append(qty, buyBtn);
 
