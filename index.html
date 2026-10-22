@@ -256,13 +256,37 @@
     position: fixed; left: 50%; bottom: 1.25rem; z-index: 20; max-width: min(92vw, 440px);
     padding: .7rem 1rem; border-radius: 8px; background: var(--ink); color: #fff; font-size: .9rem;
     box-shadow: 0 12px 32px rgba(11,13,18,.25);
-    transform: translate(-50%, 160%); transition: transform .2s; pointer-events: none;
+    transform: translate(-50%, 160%); transition: transform .2s, visibility .2s; pointer-events: none;
+    visibility: hidden;
   }
-  .toast.show { transform: translate(-50%, 0); }
+  .toast.show { transform: translate(-50%, 0); visibility: visible; }
   .toast.error { background: var(--danger); }
   .toast.ok { background: var(--ok); }
 
   .account-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+
+  /* ---------- Navigation, profile & leaderboard ---------- */
+  .logo-btn { background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
+  .appbar-right button[aria-current="page"] { border-color: var(--ink); }
+
+  .avatar { display: inline-grid; place-items: center; flex: none; border-radius: 50%; object-fit: cover; background: #eef0f3; color: var(--ink-2); font-weight: 600; }
+  .avatar-lg { width: 96px; height: 96px; font-size: 2.25rem; }
+  .avatar-sm { width: 36px; height: 36px; font-size: .95rem; }
+  .profile-card { max-width: 560px; }
+  .profile-body { display: flex; align-items: flex-start; gap: 1.5rem; }
+  .profile-info { flex: 1; min-width: 0; }
+  .profile-name { margin-bottom: 1rem; font-size: 1.25rem; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .tab { font: inherit; font-size: .85rem; font-weight: 500; padding: .35rem .75rem; cursor: pointer; background: none; color: var(--muted); border: 1px solid transparent; border-radius: 999px; }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--ink); background: var(--bg); border-color: var(--line-strong); }
+  .lb-list { list-style: none; margin: 0; padding: 0; }
+  .lb-row { display: flex; align-items: center; gap: .85rem; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  .lb-row:last-child { border-bottom: 0; }
+  .lb-rank { flex: none; width: 2rem; text-align: right; font-family: var(--mono); font-size: .85rem; color: var(--muted); }
+  .lb-name { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-amount { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
 
   /* ---------- Responsive ---------- */
   @media (max-width: 900px) {
@@ -283,6 +307,12 @@
     .topbar { grid-template-columns: 1fr; }
     .stat-row .stat { flex: 1; }
     .market-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .appbar-right { gap: .4rem; }
+    .appbar-right button.ghost { padding: .4rem .6rem; font-size: .82rem; }
+    .profile-body { flex-direction: column; }
+  }
+  @media (max-width: 480px) {
+    .logo-text { display: none; }
   }
 </style>
 </head>
@@ -347,17 +377,63 @@
       <div id="home-view" class="hidden">
         <header class="appbar">
           <div class="appbar-inner">
-            <div class="logo">
+            <button id="nav-home" class="logo logo-btn" aria-label="ReelMonkey home">
               <span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/></svg></span>
-              ReelMonkey
-            </div>
+              <span class="logo-text">ReelMonkey</span>
+            </button>
             <div class="appbar-right">
+              <button id="nav-leaderboard" class="ghost">Leaderboard</button>
+              <button id="nav-profile" class="ghost">Profile</button>
               <button id="logout" class="ghost">Log out</button>
             </div>
           </div>
         </header>
 
-        <div class="container">
+        <!-- Profile page -->
+        <div id="profile-page" class="container hidden">
+          <div class="topbar">
+            <h2>Profile</h2>
+          </div>
+          <section class="panel profile-card">
+            <div class="panel-body profile-body">
+              <div id="profile-avatar"></div>
+              <div class="profile-info">
+                <div id="profile-name" class="profile-name"></div>
+                <label for="avatar-file">Profile picture (JPEG, PNG or WebP)</label>
+                <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp">
+                <p id="profile-msg" class="msg" role="status" aria-live="polite"></p>
+                <button id="avatar-btn" class="primary">Upload picture</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Leaderboard page -->
+        <div id="leaderboard-page" class="container hidden">
+          <div class="topbar">
+            <div>
+              <h2>Leaderboard</h2>
+              <p class="page-sub">Top 100 by profit from closed trades.</p>
+            </div>
+          </div>
+          <section class="panel">
+            <div class="panel-head">
+              <div class="tabs" role="tablist" aria-label="Time period">
+                <button class="tab" role="tab" data-period="week" aria-selected="true">Past week</button>
+                <button class="tab" role="tab" data-period="month" aria-selected="false">Past month</button>
+                <button class="tab" role="tab" data-period="year" aria-selected="false">Past year</button>
+                <button class="tab" role="tab" data-period="all" aria-selected="false">All time</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <ol id="lb-list" class="lb-list"></ol>
+              <p id="lb-empty" class="empty hidden">No closed trades in this period yet.</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- Main page -->
+        <div id="main-page" class="container">
           <div class="topbar">
             <h2 id="welcome">Welcome</h2>
             <div class="stat-row">
@@ -504,6 +580,8 @@
   }
 
   async function showHome(user) {
+    // Start on the main page when a (different) user signs in; token refreshes keep the current page.
+    if (!currentUser || currentUser.id !== user.id) showPage("main");
     currentUser = user;
     showView("home");
     const bonus = await sb.rpc("collect_daily_bonus");
@@ -952,6 +1030,126 @@
 
   $("market-refresh").addEventListener("click", refreshTrading);
 
+  // ---------- Pages (signed in) ----------
+  const PAGES = { main: "main-page", profile: "profile-page", leaderboard: "leaderboard-page" };
+
+  function showPage(name) {
+    Object.entries(PAGES).forEach(([key, id]) => $(id).classList.toggle("hidden", key !== name));
+    $("nav-profile").setAttribute("aria-current", name === "profile" ? "page" : "false");
+    $("nav-leaderboard").setAttribute("aria-current", name === "leaderboard" ? "page" : "false");
+    window.scrollTo(0, 0);
+    if (name === "profile") loadProfile();
+    if (name === "leaderboard") loadLeaderboard();
+  }
+
+  // ---------- Profile ----------
+  // Pictures are cropped to a square and resized to 256x256 JPEG in the browser before upload.
+  // Re-encoding also strips metadata such as the photo's GPS location.
+  const AVATAR_BUCKET = "avatars";
+  const AVATAR_PX = 256;
+  const AVATAR_MAX_MB = 10;
+  const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+  const avatarUrl = (path) => sb.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+  function setProfileMsg(text, kind = "") { $("profile-msg").textContent = text; $("profile-msg").className = "msg " + kind; }
+
+  // A user's picture, or their first initial when they don't have one
+  function avatar(username, path, sizeClass) {
+    if (path) {
+      const img = el("img", "avatar " + sizeClass);
+      img.src = avatarUrl(path);
+      img.alt = "";
+      img.loading = "lazy";
+      return img;
+    }
+    return el("span", "avatar " + sizeClass, (username || "?").charAt(0).toUpperCase());
+  }
+
+  async function loadProfile() {
+    const { data } = await sb.from("profiles").select("username, avatar_path").eq("id", currentUser.id).single();
+    if (!data) return;
+    $("profile-name").textContent = "@" + data.username;
+    $("profile-avatar").replaceChildren(avatar(data.username, data.avatar_path, "avatar-lg"));
+  }
+
+  async function makeAvatar(file) {
+    let bmp;
+    try { bmp = await createImageBitmap(file); }
+    catch { throw new Error("Couldn't read this image. Try a JPEG, PNG or WebP file."); }
+    const side = Math.min(bmp.width, bmp.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = AVATAR_PX;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // transparent images get a white background
+    ctx.fillRect(0, 0, AVATAR_PX, AVATAR_PX);
+    ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, AVATAR_PX, AVATAR_PX);
+    bmp.close();
+    return new Promise((resolve, reject) =>
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Couldn't process this image.")), "image/jpeg", 0.85));
+  }
+
+  async function uploadAvatar() {
+    const file = $("avatar-file").files[0];
+    if (!file) return setProfileMsg("Choose an image first.", "error");
+    if (!AVATAR_TYPES.includes(file.type)) return setProfileMsg("Use a JPEG, PNG or WebP image.", "error");
+    if (file.size > AVATAR_MAX_MB * 1024 * 1024) return setProfileMsg(`Image must be under ${AVATAR_MAX_MB} MB.`, "error");
+
+    const path = `${currentUser.id}/${crypto.randomUUID()}.jpg`;
+    $("avatar-btn").disabled = true;
+    setProfileMsg("Uploading…");
+    try {
+      const blob = await makeAvatar(file);
+      const up = await sb.storage.from(AVATAR_BUCKET).upload(path, blob, { contentType: "image/jpeg", cacheControl: "3600" });
+      if (up.error) throw up.error;
+      const { data: oldPath, error } = await sb.rpc("set_avatar", { p_path: path });
+      if (error) {
+        await sb.storage.from(AVATAR_BUCKET).remove([path]); // don't leave the unused upload behind
+        throw error;
+      }
+      if (oldPath) await sb.storage.from(AVATAR_BUCKET).remove([oldPath]);
+      $("avatar-file").value = "";
+      setProfileMsg("Profile picture updated.", "ok");
+      loadProfile();
+    } catch (err) {
+      setProfileMsg(err.message || "Upload failed. Try again.", "error");
+    } finally {
+      $("avatar-btn").disabled = false;
+    }
+  }
+
+  // ---------- Leaderboard ----------
+  let lbPeriod = "week";
+  let lbRequest = 0; // ignore slow responses after the user switches tabs
+
+  async function loadLeaderboard() {
+    document.querySelectorAll("#leaderboard-page .tab").forEach((t) =>
+      t.setAttribute("aria-selected", String(t.dataset.period === lbPeriod)));
+    const req = ++lbRequest;
+    const { data, error } = await sb.rpc("get_leaderboard", { p_period: lbPeriod });
+    if (req !== lbRequest) return;
+
+    const list = $("lb-list");
+    list.replaceChildren();
+    if (error) {
+      $("lb-empty").textContent = "Couldn't load the leaderboard. Try again.";
+      $("lb-empty").classList.remove("hidden");
+      return;
+    }
+    data.forEach((row, i) => {
+      const amount = Number(row.amount);
+      const li = el("li", "lb-row");
+      li.append(
+        el("span", "lb-rank", String(i + 1)),
+        avatar(row.username, row.avatar_path, "avatar-sm"),
+        el("span", "lb-name", "@" + row.username),
+        el("span", "lb-amount " + (amount > 0 ? "gain" : amount < 0 ? "loss" : ""), (amount > 0 ? "+" : "") + money(amount))
+      );
+      list.appendChild(li);
+    });
+    $("lb-empty").textContent = "No closed trades in this period yet.";
+    $("lb-empty").classList.toggle("hidden", data.length > 0);
+  }
+
   // ---------- Account deletion ----------
   async function deleteAccount() {
     const username = $("welcome").textContent.replace(/^@/, "");
@@ -961,6 +1159,7 @@
 
     // Grab the video file paths before the database rows are gone
     const { data: mine } = await sb.from("reels").select("video_path, thumb_path").eq("user_id", currentUser.id);
+    const { data: prof } = await sb.from("profiles").select("avatar_path").eq("id", currentUser.id).single();
 
     $("delete-account").disabled = true;
     const { error } = await sb.rpc("delete_account");
@@ -970,12 +1169,20 @@
     }
     const paths = (mine || []).flatMap((r) => [r.video_path, r.thumb_path]);
     if (paths.length) await sb.storage.from(BUCKET).remove(paths);
+    if (prof && prof.avatar_path) await sb.storage.from(AVATAR_BUCKET).remove([prof.avatar_path]);
 
     await sb.auth.signOut({ scope: "local" });
     setMode("signup");
     setMsg("Your account has been deleted.", "ok");
     $("delete-account").disabled = false;
   }
+
+  $("nav-home").addEventListener("click", () => showPage("main"));
+  $("nav-profile").addEventListener("click", () => showPage("profile"));
+  $("nav-leaderboard").addEventListener("click", () => showPage("leaderboard"));
+  $("avatar-btn").addEventListener("click", uploadAvatar);
+  document.querySelectorAll("#leaderboard-page .tab").forEach((t) =>
+    t.addEventListener("click", () => { lbPeriod = t.dataset.period; loadLeaderboard(); }));
 
   $("delete-account").addEventListener("click", deleteAccount);
   $("upload-btn").addEventListener("click", uploadReel);
