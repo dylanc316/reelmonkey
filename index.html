@@ -891,7 +891,7 @@
   const qtyDraft = {}; // keeps typed quantities across re-renders
 
   const money = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  // Share prices are likes^(1/6), so they're fractional; show enough digits to see a single like move them.
+  // Share prices are 1.1^(log_10(likes)^k) with k ≈ 2.16, so they're fractional; show enough digits to see a single like move them.
   const sharePrice = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
   // Match the server: purchases round up to the cent, sales round down.
   const cents = (n) => Number((n * 100).toFixed(6));
