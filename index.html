@@ -822,9 +822,7 @@
     openReel = reel;
     const video = $("player-video");
     const src = streamUrl(reel.mux_playback_id);
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = src; // Safari (incl. iPhone) plays Mux streams natively
-    } else if (window.Hls && Hls.isSupported()) {
+    if (window.Hls && Hls.isSupported()) {
       hls = new Hls();
       hls.loadSource(src);
       hls.attachMedia(video);
