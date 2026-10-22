@@ -195,6 +195,10 @@
   }
   .thumb:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(11,13,18,.12); }
   .thumb:hover::after { opacity: 1; }
+  .thumb-status { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; padding: .75rem; text-align: center; font: inherit; font-size: .82rem; font-weight: 500; color: var(--muted); cursor: default; }
+  .thumb-status:hover { transform: none; box-shadow: none; }
+  .thumb-status small { font-size: .74rem; font-weight: 400; }
+  .thumb-status.failed { color: var(--danger); cursor: pointer; }
   .empty { color: var(--muted); font-size: .92rem; text-align: center; padding: 2.5rem 1rem; border: 1px dashed var(--line-strong); border-radius: 8px; margin: 0; }
 
   /* ---------- Player ---------- */
@@ -268,7 +272,6 @@
   /* ---------- Navigation, profile & leaderboard ---------- */
   .logo-btn { background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
   .appbar-right button[aria-current="page"] { border-color: var(--ink); }
-  
   #logout { background: var(--ink); color: #fff; border-color: var(--ink); }
   #logout:hover { background: #262b36; border-color: #262b36; }
 
@@ -489,8 +492,8 @@
             <section class="panel upload">
               <div class="panel-head"><h3>Upload a reel</h3></div>
               <div class="panel-body">
-                <label for="video-file">Video (MP4 or WebM, up to 50 MB and 90 seconds)</label>
-                <input id="video-file" type="file" accept="video/mp4,video/webm,.mp4,.webm">
+                <label for="video-file">Video (MP4, MOV or WebM, up to 500 MB and 90 seconds)</label>
+                <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.webm,.m4v">
                 <label for="caption">Caption (optional)</label>
                 <textarea id="caption" maxlength="300"></textarea>
                 <p id="upload-msg" class="msg" role="status" aria-live="polite"></p>
@@ -541,6 +544,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <script>
   // ---- Paste your own values (Supabase > Project Settings > API) ----
   const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
@@ -658,92 +662,125 @@
   }
 
   // ---------- Reels ----------
-  const BUCKET = "reels";
-  const MAX_MB = 50;
+  // Videos are uploaded straight to Mux (any common format, including iPhone .mov/HEVC),
+  // converted there, and streamed from Mux. The Edge Functions create and delete reel rows.
+  const MAX_MB = 500;
   const MAX_SECONDS = 90;
-  const ALLOWED_TYPES = ["video/mp4", "video/webm"];
+  const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
+  const ALLOWED_EXT = /\.(mp4|mov|webm|m4v)$/i;
+  const CHUNK_BYTES = 8 * 1024 * 1024; // Mux requires chunks in multiples of 256 KB
+  const PENDING_POLL_MS = 5000;
   let currentUser = null;
   let reels = [];
   let openReel = null;
+  let hls = null;
+  let pendingTimer = null;
 
-  const publicUrl = (path) => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  const streamUrl = (playbackId) => `https://stream.mux.com/${playbackId}.m3u8`;
+  const thumbUrl = (playbackId) => `https://image.mux.com/${playbackId}/thumbnail.jpg?width=480&time=1`;
   function setUploadMsg(text, kind = "") { $("upload-msg").textContent = text; $("upload-msg").className = "msg " + kind; }
 
-  // Grabs a frame from the video in the browser and returns it as a JPEG blob
-  function makeThumbnail(file) {
-    return new Promise((resolve, reject) => {
+  // Calls one of the Edge Functions and returns its JSON, or throws with its error message.
+  async function callFunction(name, body) {
+    const { data, error } = await sb.functions.invoke(name, { body });
+    if (error) {
+      let message = "Something went wrong. Try again.";
+      try { const j = await error.context.json(); if (j && j.error) message = j.error; } catch {}
+      throw new Error(message);
+    }
+    return data;
+  }
+
+  // Best-effort length check before uploading. Returns null if this browser can't read the file
+  // (e.g. some HEVC videos outside Safari); Mux enforces the limit after upload either way.
+  function readDuration(file) {
+    return new Promise((resolve) => {
       const url = URL.createObjectURL(file);
       const v = document.createElement("video");
+      const done = (val) => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(val); };
+      const timer = setTimeout(() => done(null), 10000);
       v.preload = "metadata";
       v.muted = true;
-      v.playsInline = true;
-      const done = (fn, val) => { URL.revokeObjectURL(url); fn(val); };
-
-      v.onloadedmetadata = () => {
-        if (!isFinite(v.duration) || v.duration <= 0) return done(reject, new Error("Couldn't read this video."));
-        if (v.duration > MAX_SECONDS) return done(reject, new Error(`Videos can be at most ${MAX_SECONDS} seconds.`));
-        v.currentTime = Math.min(1, v.duration / 2);
-      };
-      v.onseeked = () => {
-        const scale = Math.min(1, 480 / v.videoWidth);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(v.videoWidth * scale);
-        canvas.height = Math.round(v.videoHeight * scale);
-        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-          if (!blob) return done(reject, new Error("Couldn't create a thumbnail for this video."));
-          done(resolve, { blob, duration: v.duration });
-        }, "image/jpeg", 0.8);
-      };
-      v.onerror = () => done(reject, new Error("Couldn't read this video. Try an MP4 or WebM file."));
+      v.onloadedmetadata = () => done(isFinite(v.duration) && v.duration > 0 ? v.duration : null);
+      v.onerror = () => done(null);
       v.src = url;
     });
+  }
+
+  // Sends the file to Mux in resumable chunks, retrying each chunk a few times.
+  async function uploadInChunks(url, file, onProgress) {
+    let start = 0;
+    while (start < file.size) {
+      const end = Math.min(start + CHUNK_BYTES, file.size);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const res = await fetch(url, {
+            method: "PUT",
+            headers: { "Content-Range": `bytes ${start}-${end - 1}/${file.size}` },
+            body: file.slice(start, end)
+          });
+          if (res.ok || res.status === 308) break; // 308 = chunk received, send the next one
+          throw new Error(`Upload failed (${res.status}).`);
+        } catch (err) {
+          if (attempt >= 3) throw new Error("Upload failed. Check your connection and try again.");
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+      start = end;
+      onProgress(start / file.size);
+    }
   }
 
   async function uploadReel() {
     const file = $("video-file").files[0];
     if (!file) return setUploadMsg("Choose a video first.", "error");
-    if (!ALLOWED_TYPES.includes(file.type)) return setUploadMsg("Only MP4 and WebM videos are supported.", "error");
+    if (!ALLOWED_TYPES.includes(file.type) && !ALLOWED_EXT.test(file.name)) return setUploadMsg("Only MP4, MOV and WebM videos are supported.", "error");
+    if (file.size === 0) return setUploadMsg("This file is empty.", "error");
     if (file.size > MAX_MB * 1024 * 1024) return setUploadMsg(`Video must be under ${MAX_MB} MB.`, "error");
-
-    const id = crypto.randomUUID();
-    const base = `${currentUser.id}/${id}`;
-    const videoPath = `${base}.${file.type === "video/webm" ? "webm" : "mp4"}`;
-    const thumbPath = `${base}.jpg`;
 
     $("upload-btn").disabled = true;
     setUploadMsg("Preparing video…");
+    let reelId = null;
     try {
-      const { blob, duration } = await makeThumbnail(file);
+      const duration = await readDuration(file);
+      if (duration !== null && duration > MAX_SECONDS) throw new Error(`Videos can be at most ${MAX_SECONDS} seconds.`);
 
-      setUploadMsg("Uploading…");
-      let res = await sb.storage.from(BUCKET).upload(videoPath, file, { contentType: file.type, cacheControl: "3600" });
-      if (res.error) throw res.error;
-      res = await sb.storage.from(BUCKET).upload(thumbPath, blob, { contentType: "image/jpeg", cacheControl: "3600" });
-      if (res.error) throw res.error;
+      const { reel_id, upload_url } = await callFunction("mux-upload", { caption: $("caption").value.trim() });
+      reelId = reel_id;
+      loadReels(); // shows the "Uploading…" tile
 
-      const { error } = await sb.from("reels").insert({
-        id,
-        user_id: currentUser.id,
-        caption: $("caption").value.trim() || null,
-        video_path: videoPath,
-        thumb_path: thumbPath,
-        duration_seconds: Math.round(duration * 100) / 100
-      });
-      if (error) throw error;
+      setUploadMsg("Uploading… 0%");
+      await uploadInChunks(upload_url, file, (f) => setUploadMsg(`Uploading… ${Math.round(f * 100)}%`));
 
       $("video-file").value = "";
       $("caption").value = "";
-      setUploadMsg("Uploaded!", "ok");
+      setUploadMsg("Uploaded! Your reel will appear in the market once it's processed.", "ok");
       loadReels();
-      loadMarket();
     } catch (err) {
-      // Don't leave orphaned files behind if any step failed
-      await sb.storage.from(BUCKET).remove([videoPath, thumbPath]);
+      // Don't leave a half-finished reel behind if any step failed
+      if (reelId) await callFunction("mux-delete", { reel_id: reelId }).catch(() => {});
       setUploadMsg(err.message || "Upload failed. Try again.", "error");
+      loadReels();
     } finally {
       $("upload-btn").disabled = false;
     }
+  }
+
+  // Tile for a reel that isn't playable yet (uploading/processing) or that failed
+  function statusTile(reel) {
+    const failed = reel.status === "failed";
+    const tile = el(failed ? "button" : "div", "thumb thumb-status" + (failed ? " failed" : ""));
+    tile.append(el("span", "", failed ? "Upload failed" : reel.status === "uploading" ? "Uploading…" : "Processing…"));
+    if (failed) {
+      if (reel.failure_reason) tile.append(el("small", "", reel.failure_reason));
+      tile.append(el("small", "", "Click to remove"));
+      tile.addEventListener("click", async () => {
+        if (!confirm("Remove this failed upload?")) return;
+        try { await callFunction("mux-delete", { reel_id: reel.id }); } catch (err) { return alert(err.message); }
+        loadReels();
+      });
+    }
+    return tile;
   }
 
   async function loadReels() {
@@ -756,11 +793,12 @@
     const grid = $("grid");
     grid.replaceChildren();
     reels.forEach((reel) => {
+      if (reel.status !== "ready") return grid.appendChild(statusTile(reel));
       const btn = document.createElement("button");
       btn.className = "thumb";
       btn.setAttribute("aria-label", "Play reel" + (reel.caption ? ": " + reel.caption : ""));
       const img = document.createElement("img");
-      img.src = publicUrl(reel.thumb_path);
+      img.src = thumbUrl(reel.mux_playback_id);
       img.alt = "";
       img.loading = "lazy";
       btn.appendChild(img);
@@ -768,24 +806,45 @@
       grid.appendChild(btn);
     });
     $("empty").classList.toggle("hidden", reels.length > 0);
+
+    // While anything is still uploading/processing, check back until it's ready
+    clearTimeout(pendingTimer);
+    if (reels.some((r) => r.status === "uploading" || r.status === "processing")) {
+      pendingTimer = setTimeout(() => {
+        if (!currentUser || $("home-view").classList.contains("hidden")) return;
+        loadReels();
+        loadMarket();
+      }, PENDING_POLL_MS);
+    }
   }
 
   function openPlayer(reel) {
     openReel = reel;
-    $("player-video").src = publicUrl(reel.video_path);
+    const video = $("player-video");
+    const src = streamUrl(reel.mux_playback_id);
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src; // Safari (incl. iPhone) plays Mux streams natively
+    } else if (window.Hls && Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(src);
+      hls.attachMedia(video);
+    } else {
+      video.src = src;
+    }
     const cap = $("player-caption");
     cap.textContent = reel.caption || "No caption";
     cap.classList.toggle("none", !reel.caption);
     // Only the owner can delete. Market/portfolio rows carry is_mine; rows from "Your reels" carry user_id.
     $("player-delete").classList.toggle("hidden", !(reel.is_mine ?? reel.user_id === currentUser.id));
     $("player").showModal();
-    $("player-video").play().catch(() => {}); // autoplay may be blocked; controls still work
+    video.play().catch(() => {}); // autoplay may be blocked; controls still work
   }
 
   function closePlayer() { $("player").close(); }
 
   $("player").addEventListener("close", () => {
     $("player-video").pause();
+    if (hls) { hls.destroy(); hls = null; }
     $("player-video").removeAttribute("src");
     $("player-video").load();
     openReel = null;
@@ -796,10 +855,9 @@
     if (!confirm("Delete this reel permanently? This can't be undone.")) return;
     const reel = openReel;
 
-    // Delete the database row first so it disappears from the profile immediately
-    const { data, error } = await sb.from("reels").delete().eq("id", reel.id).select();
-    if (error || !data || data.length === 0) return alert("Couldn't delete this reel. Try again.");
-    await sb.storage.from(BUCKET).remove([reel.video_path, reel.thumb_path]);
+    // The Edge Function deletes the reel (cashing out any holders) and its video on Mux
+    try { await callFunction("mux-delete", { reel_id: reel.id }); }
+    catch (err) { return alert("Couldn't delete this reel. " + err.message); }
 
     closePlayer();
     loadReels();
@@ -844,7 +902,7 @@
     const btn = el("button", "thumb");
     btn.setAttribute("aria-label", "Play reel" + (reel.caption ? ": " + reel.caption : ""));
     const img = el("img");
-    img.src = publicUrl(reel.thumb_path);
+    img.src = thumbUrl(reel.mux_playback_id);
     img.alt = "";
     img.loading = "lazy";
     btn.appendChild(img);
@@ -1160,18 +1218,21 @@
     if (typed === null) return;
     if (typed.trim() !== username) return alert("That didn't match your username. Your account was not deleted.");
 
-    // Grab the video file paths before the database rows are gone
-    const { data: mine } = await sb.from("reels").select("video_path, thumb_path").eq("user_id", currentUser.id);
+    // Grab the picture path before the profile row is gone
     const { data: prof } = await sb.from("profiles").select("avatar_path").eq("id", currentUser.id).single();
 
     $("delete-account").disabled = true;
+    // Delete all reels and their videos on Mux first (holders are cashed out)
+    try { await callFunction("mux-delete", { all: true }); }
+    catch (err) {
+      $("delete-account").disabled = false;
+      return alert("Couldn't delete your account. " + err.message);
+    }
     const { error } = await sb.rpc("delete_account");
     if (error) {
       $("delete-account").disabled = false;
       return alert("Couldn't delete your account. " + error.message);
     }
-    const paths = (mine || []).flatMap((r) => [r.video_path, r.thumb_path]);
-    if (paths.length) await sb.storage.from(BUCKET).remove(paths);
     if (prof && prof.avatar_path) await sb.storage.from(AVATAR_BUCKET).remove([prof.avatar_path]);
 
     await sb.auth.signOut({ scope: "local" });
