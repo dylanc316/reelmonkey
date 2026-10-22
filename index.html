@@ -969,7 +969,7 @@
   function voteButton(reel, value) {
     const active = reel.my_vote === value;
     const btn = el("button", "vote" + (active ? (value > 0 ? " on-up" : " on-down") : ""),
-      value > 0 ? "▲ Like" : "▼ Dislike");
+      value > 0 ? "😂 Like" : "😭 Dislike");
     btn.setAttribute("aria-pressed", String(active));
     // Shareholders can't change their vote while they hold shares.
     if (reel.my_shares > 0) {
