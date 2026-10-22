@@ -355,7 +355,7 @@
       <!-- Signed-out view -->
       <div id="auth-view">
         <h2 id="auth-title">Create your account</h2>
-        <p class="sub" id="auth-sub">You start with $1,000 in play money.</p>
+        <p class="sub" id="auth-sub">Currently, you start with $1,000 in play money, but real-money trading is coming to ReelMonkey soon</p>
 
         <div id="username-wrap">
           <label for="username">Username</label>
@@ -574,7 +574,7 @@
     mode = next;
     const signup = mode === "signup", forgot = mode === "forgot";
     $("auth-title").textContent = signup ? "Create your account" : forgot ? "Reset your password" : "Log in";
-    $("auth-sub").textContent = signup ? "You start with $1,000 in play money."
+    $("auth-sub").textContent = signup ? "Currently, you start with $1,000 in play money, but real-money trading is coming to ReelMonkey soon"
       : forgot ? "We'll email you a link to choose a new password." : "Welcome back.";
     $("username-wrap").classList.toggle("hidden", !signup);
     $("password-wrap").classList.toggle("hidden", forgot);
