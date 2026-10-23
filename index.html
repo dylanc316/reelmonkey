@@ -283,7 +283,8 @@
   .player-right { display: flex; gap: .5rem; margin-left: auto; }
   a.ghost { display: inline-flex; align-items: center; font-size: .88rem; font-weight: 500; padding: .45rem .85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; text-decoration: none; }
   a.ghost:hover { border-color: var(--ink); }
-  .account-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+  .account-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+  .account-footer .legal-links { margin: 0; }
 
   /* ---------- Navigation, profile & leaderboard ---------- */
   .logo-btn { background: none; border: 0; padding: 0; color: inherit; font-family: inherit; cursor: pointer; }
@@ -543,9 +544,9 @@
           </div>
 
           <div class="account-footer">
+            <p class="legal-links"><a href="privacy.html">Privacy policy</a> · <a href="report.html">Report content</a></p>
             <button id="delete-account" class="danger">Delete account</button>
           </div>
-          <p class="legal-links"><a href="privacy.html">Privacy policy</a> · <a href="report.html">Report content</a></p>
         </div>
       </div>
 
