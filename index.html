@@ -277,6 +277,12 @@
   .toast.error { background: var(--danger); }
   .toast.ok { background: var(--ok); }
 
+  .legal-links { margin: 1.25rem 0 0; font-size: .82rem; color: var(--muted); }
+  .legal-links a { color: var(--muted); }
+  .legal-links a:hover { color: var(--ink); }
+  .player-right { display: flex; gap: .5rem; margin-left: auto; }
+  a.ghost { display: inline-flex; align-items: center; font-size: .88rem; font-weight: 500; padding: .45rem .85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; text-decoration: none; }
+  a.ghost:hover { border-color: var(--ink); }
   .account-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 
   /* ---------- Navigation, profile & leaderboard ---------- */
@@ -379,6 +385,10 @@
           <label for="username">Username</label>
           <input id="username" autocomplete="username" maxlength="20" placeholder="letters, numbers, underscores">
         </div>
+        <div id="birthdate-wrap">
+          <label for="birthdate">Date of birth</label>
+          <input id="birthdate" type="date" autocomplete="bday">
+        </div>
         <label for="email">Email</label>
         <input id="email" type="email" autocomplete="email">
         <div id="password-wrap">
@@ -395,6 +405,8 @@
           <span id="switch-text">Already have an account?</span>
           <button id="switch-btn" class="link">Log in</button>
         </p>
+
+        <p class="legal-links"><a href="privacy.html">Privacy policy</a> · <a href="report.html">Report content or request removal of intimate images</a></p>
       </div>
 
       <!-- Signed-in view -->
@@ -534,6 +546,7 @@
             <span>Permanently delete your account, reels and shares.</span>
             <button id="delete-account" class="danger">Delete account</button>
           </div>
+          <p class="legal-links"><a href="privacy.html">Privacy policy</a> · <a href="report.html">Report content or request removal of intimate images</a></p>
         </div>
       </div>
 
@@ -555,7 +568,10 @@
   <p id="player-caption"></p>
   <div class="player-actions">
     <button id="player-delete" class="danger">Delete reel</button>
-    <button id="player-close" class="ghost">Close</button>
+    <div class="player-right">
+      <a id="player-report" class="ghost" href="report.html" target="_blank" rel="noopener">Report</a>
+      <button id="player-close" class="ghost">Close</button>
+    </div>
   </div>
 </dialog>
 
@@ -595,6 +611,7 @@
     $("auth-sub").textContent = signup ? "Currently, you start with $1,000 in play money, but real-money trading plus prediction markets are coming to ReelMonkey soon"
       : forgot ? "We'll email you a link to choose a new password." : "Welcome back.";
     $("username-wrap").classList.toggle("hidden", !signup);
+    $("birthdate-wrap").classList.toggle("hidden", !signup);
     $("password-wrap").classList.toggle("hidden", forgot);
     $("forgot-wrap").classList.toggle("hidden", mode !== "login");
     $("submit").textContent = signup ? "Create account" : forgot ? "Send reset link" : "Log in";
@@ -621,6 +638,25 @@
     loadPortfolio();
   }
 
+  // ---------- Age check ----------
+  // Users must be at least MIN_AGE. The database enforces the same rule (enforce_min_age)
+  // and doesn't store the date of birth. If someone is under age, this browser stops
+  // offering sign-up so they can't simply go back and pick an older date.
+  const MIN_AGE = 18;
+  const AGE_BLOCK_KEY = "reelmonkey-age-block";
+
+  function yearsSince(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    if (!m) return null;
+    const now = new Date();
+    let age = now.getFullYear() - Number(m[1]);
+    const month = now.getMonth() + 1, day = now.getDate();
+    if (month < Number(m[2]) || (month === Number(m[2]) && day < Number(m[3]))) age--;
+    return age;
+  }
+  function ageBlocked() { try { return localStorage.getItem(AGE_BLOCK_KEY) === "1"; } catch { return false; } }
+  function blockAge() { try { localStorage.setItem(AGE_BLOCK_KEY, "1"); } catch {} }
+
   async function submit() {
     if (!sb) return setMsg("Supabase isn't configured yet.", "error");
     const email = $("email").value.trim();
@@ -638,8 +674,15 @@
     }
 
     if (!email || !password) return setMsg("Enter your email and password.", "error");
+    const birthdate = $("birthdate").value;
     if (mode === "signup") {
+      const notEligible = "Sorry, you're not eligible to create an account.";
+      if (ageBlocked()) return setMsg(notEligible, "error");
       if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return setMsg("Username must be 3–20 letters, numbers or underscores.", "error");
+      if (!birthdate) return setMsg("Enter your date of birth.", "error");
+      const age = yearsSince(birthdate);
+      if (age === null || age < 0 || age > 120) return setMsg("Enter a valid date of birth.", "error");
+      if (age < MIN_AGE) { blockAge(); return setMsg(notEligible, "error"); }
       if (password.length < 8) return setMsg("Password must be at least 8 characters.", "error");
     }
 
@@ -649,7 +692,7 @@
       if (mode === "signup") {
         const { data, error } = await sb.auth.signUp({
           email, password,
-          options: { data: { username }, emailRedirectTo: window.location.origin }
+          options: { data: { username, birthdate }, emailRedirectTo: window.location.origin }
         });
         if (error) throw error;
         if (!data.session) setMsg("Check your email to confirm your account, then log in.", "ok");
@@ -840,6 +883,8 @@
     openReel = reel;
     const video = $("player-video");
     const src = streamUrl(reel.mux_playback_id);
+    // Prefer hls.js wherever it works: some browsers (e.g. Edge) claim native HLS support
+    // but fail to play. Native playback is only the fallback (e.g. older iPhones).
     if (window.Hls && Hls.isSupported()) {
       hls = new Hls();
       hls.loadSource(src);
@@ -852,6 +897,8 @@
     cap.classList.toggle("none", !reel.caption);
     // Only the owner can delete. Market/portfolio rows carry is_mine; rows from "Your reels" carry user_id.
     $("player-delete").classList.toggle("hidden", !(reel.is_mine ?? reel.user_id === currentUser.id));
+    $("player-report").href = "report.html?reel=" + encodeURIComponent(reel.id);
+    $("player-report").classList.toggle("hidden", !!(reel.is_mine ?? reel.user_id === currentUser.id));
     $("player").showModal();
     video.play().catch(() => {}); // autoplay may be blocked; controls still work
   }
@@ -891,7 +938,7 @@
   const qtyDraft = {}; // keeps typed quantities across re-renders
 
   const money = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
-  // Share prices are 1.1^(log_10(likes)^k) with k ≈ 2.16, so they're fractional; show enough digits to see a single like move them.
+  // Share prices are fractional (see _price_for_likes in trading.sql); show enough digits to see a single like move them.
   const sharePrice = (n) => Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
   // Match the server: purchases round up to the cent, sales round down.
   const cents = (n) => Number((n * 100).toFixed(6));
@@ -969,7 +1016,7 @@
   function voteButton(reel, value) {
     const active = reel.my_vote === value;
     const btn = el("button", "vote" + (active ? (value > 0 ? " on-up" : " on-down") : ""),
-      value > 0 ? "😂 Like" : "😭 Dislike");
+      value > 0 ? "😂 Like" : "😢 Dislike");
     btn.setAttribute("aria-pressed", String(active));
     // Shareholders can't change their vote while they hold shares.
     if (reel.my_shares > 0) {
