@@ -1013,10 +1013,14 @@
     return Promise.all([loadMarket(), loadPortfolio(), loadBalance()]);
   }
 
+  const pick = (options) => options[Math.floor(Math.random() * options.length)];
+  const LIKE_EMOJI = pick(["😂", "😭"]);
+  const DISLIKE_EMOJI = pick(["💔", "🥀"]);
+  
   function voteButton(reel, value) {
     const active = reel.my_vote === value;
     const btn = el("button", "vote" + (active ? (value > 0 ? " on-up" : " on-down") : ""),
-      value > 0 ? "😂 Like" : "😢 Dislike");
+      value > 0 ? `${LIKE_EMOJI} Like` : `${DISLIKE_EMOJI} Dislike`);
     btn.setAttribute("aria-pressed", String(active));
     // Shareholders can't change their vote while they hold shares.
     if (reel.my_shares > 0) {
