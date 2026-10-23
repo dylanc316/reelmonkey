@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report content · ReelMonkey</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0d12'/><path d='M7 21l6-6 4 4 8-9' fill='none' stroke='%2322c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --ink: #0b0d12; --ink-2: #2b303b; --muted: #6b7280;
+    --line: #e4e6eb; --line-strong: #cfd3da; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  header { background: var(--surface); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 760px; margin: 0 auto; padding: .8rem 1.25rem; }
+  .logo { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; color: var(--ink); text-decoration: none; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; }
+  .logo-mark svg { width: 18px; height: 18px; }
+  main { max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 1.75rem; letter-spacing: -.025em; margin: 0 0 .75rem; }
+  h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+  p { margin: 0 0 .9rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+  ul { margin: 0 0 .9rem; padding-left: 1.2rem; }
+  li { margin-bottom: .3rem; }
+  label { display: block; font-weight: 500; font-size: .88rem; color: var(--ink-2); margin: 0 0 .35rem; }
+  .hint { font-weight: 400; color: var(--muted); }
+  input, textarea, select { width: 100%; font: inherit; font-size: .95rem; padding: .6rem .75rem; margin-bottom: 1rem; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); }
+  textarea { min-height: 5.5rem; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  fieldset { border: 0; padding: 0; margin: 0 0 1rem; }
+  legend { font-weight: 500; font-size: .88rem; color: var(--ink-2); margin-bottom: .5rem; }
+  .choice { display: flex; gap: .6rem; align-items: flex-start; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 8px; margin-bottom: .45rem; cursor: pointer; font-weight: 400; color: var(--ink); }
+  .choice input { width: auto; margin: .25rem 0 0; }
+  .choice:has(input:checked) { border-color: var(--ink); background: var(--bg); }
+  .check { display: flex; gap: .6rem; align-items: flex-start; font-weight: 400; color: var(--ink); }
+  .check input { width: auto; margin: .25rem 0 0; }
+  .reel-ref { font-family: ui-monospace, Menlo, monospace; font-size: .85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem; margin-bottom: 1rem; overflow-wrap: anywhere; }
+  button { width: 100%; font: inherit; font-weight: 600; font-size: .95rem; padding: .75rem; cursor: pointer; background: var(--ink); color: #fff; border: 0; border-radius: 8px; }
+  button:disabled { opacity: .55; cursor: wait; }
+  .msg { min-height: 1.3rem; margin: 0 0 .9rem; font-size: .9rem; }
+  .msg.error { color: var(--danger); }
+  .done { border-color: #bbe5c8; background: #f3fbf5; }
+  .hidden { display: none !important; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <a class="logo" href="index.html"><span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/></svg></span>ReelMonkey</a>
+</div></header>
+
+<main>
+  <h1>Report content or request removal</h1>
+
+  <section class="card">
+    <h2>Removing intimate images shared without consent</h2>
+    <p>If a reel on ReelMonkey shows you (or someone you're authorized to act for) in an intimate image or video that was shared without consent, including images that were AI-generated or edited to look like you, you can ask us to remove it using this form.</p>
+    <ul>
+      <li>Your request needs: your name and email, enough detail for us to find the content, a statement that it was shared without consent, and your typed signature.</li>
+      <li>We remove valid requests within <strong>48 hours</strong> of receiving them, and we also remove copies of the same content that we find on ReelMonkey.</li>
+      <li>You don't need a ReelMonkey account to make a request.</li>
+    </ul>
+    <p>You can also use this form for other problems, such as copyright, spam or harassment.</p>
+  </section>
+
+  <section id="form-card" class="card">
+    <fieldset>
+      <legend>What are you reporting?</legend>
+      <label class="choice"><input type="radio" name="kind" value="intimate_imagery"> An intimate image or video of me shared without my consent (removal request)</label>
+      <label class="choice"><input type="radio" name="kind" value="child_safety"> Content that sexualizes or endangers a minor</label>
+      <label class="choice"><input type="radio" name="kind" value="copyright"> My copyrighted content</label>
+      <label class="choice"><input type="radio" name="kind" value="other"> Something else</label>
+    </fieldset>
+
+    <p id="child-note" class="hint hidden" style="margin:-.25rem 0 1rem">
+      Thanks for flagging this. If anyone is in immediate danger, please call 911. You can also report it to the National Center for Missing &amp; Exploited Children at <a href="https://report.cybertip.org/" target="_blank" rel="noopener">report.cybertip.org</a>. Either way, tell us below and we'll remove it from ReelMonkey.
+    </p>
+
+    <div id="reel-wrap" class="hidden">
+      <label>Reel you're reporting</label>
+      <div id="reel-ref" class="reel-ref"></div>
+    </div>
+
+    <label for="location">Where is the content? <span class="hint" id="location-hint">(the uploader's username, the caption, roughly when it was posted)</span></label>
+    <textarea id="location" maxlength="1000"></textarea>
+
+    <label for="description">Details <span class="hint">(optional)</span></label>
+    <textarea id="description" maxlength="4000"></textarea>
+
+    <label for="name">Your full name <span class="hint" id="name-hint">(optional)</span></label>
+    <input id="name" maxlength="200" autocomplete="name">
+
+    <label for="email">Your email <span class="hint" id="email-hint">(optional, so we can follow up)</span></label>
+    <input id="email" type="email" maxlength="320" autocomplete="email">
+
+    <div id="removal-fields" class="hidden">
+      <label class="check"><input type="checkbox" id="good-faith"> I state in good faith that this image or video was published without the consent of the person shown, that I am that person or authorized to act for them, and that the information in this request is accurate.</label>
+      <p></p>
+      <label for="signature">Signature <span class="hint">(type your full name)</span></label>
+      <input id="signature" maxlength="200">
+    </div>
+
+    <p id="msg" class="msg" role="status" aria-live="polite"></p>
+    <button id="submit">Send report</button>
+    <p class="hint" style="margin:.9rem 0 0;font-size:.85rem">We use what you enter here only to handle your report. See our <a href="privacy.html">privacy policy</a>.</p>
+  </section>
+
+  <section id="done-card" class="card done hidden">
+    <h2>Thanks, we received your report.</h2>
+    <p id="done-text"></p>
+    <p>Your reference number is <strong id="ref"></strong>. Include it if you contact us about this report.</p>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Same project as index.html (these values are public)
+  const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcmlweG1hcmdyd29wd2lxcmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4ODUxMDgsImV4cCI6MjEwNjQ2MTEwOH0.ho5Shz5eQZDyuiCWwlcd6V8qoc8rrstVXiu_-uFfhzU";
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const reelParam = new URLSearchParams(location.search).get("reel");
+  const reelId = reelParam && UUID.test(reelParam) ? reelParam : null;
+  if (reelId) {
+    $("reel-ref").textContent = "Reel " + reelId;
+    $("reel-wrap").classList.remove("hidden");
+    $("location-hint").textContent = "(optional, since we know which reel)";
+  }
+
+  const kind = () => (document.querySelector('input[name="kind"]:checked') || {}).value;
+  function setMsg(text, kind = "") { $("msg").textContent = text; $("msg").className = "msg " + kind; }
+
+  function updateFields() {
+    const removal = kind() === "intimate_imagery";
+    $("removal-fields").classList.toggle("hidden", !removal);
+    $("name-hint").textContent = removal ? "(required)" : "(optional)";
+    $("email-hint").textContent = removal ? "(required, so we can follow up)" : "(optional, so we can follow up)";
+    $("child-note").classList.toggle("hidden", kind() !== "child_safety");
+  }
+  document.querySelectorAll('input[name="kind"]').forEach((r) => r.addEventListener("change", updateFields));
+
+  async function send() {
+    const k = kind();
+    const location_ = $("location").value.trim();
+    const name = $("name").value.trim();
+    const email = $("email").value.trim();
+    const signature = $("signature").value.trim();
+    const goodFaith = $("good-faith").checked;
+
+    if (!k) return setMsg("Choose what you're reporting.", "error");
+    if (!reelId && !location_) return setMsg("Tell us where the content is so we can find it.", "error");
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setMsg("Enter a valid email address.", "error");
+    if (k === "intimate_imagery") {
+      if (!name || !email) return setMsg("Removal requests need your name and email.", "error");
+      if (!goodFaith) return setMsg("Check the good-faith statement to submit a removal request.", "error");
+      if (!signature) return setMsg("Type your full name as your signature.", "error");
+    }
+
+    $("submit").disabled = true;
+    setMsg("");
+    const { data, error } = await sb.rpc("submit_report", {
+      p_kind: k, p_reel_id: reelId, p_location: location_ || null, p_description: $("description").value.trim() || null,
+      p_name: name || null, p_email: email || null, p_signature: k === "intimate_imagery" ? signature : null,
+      p_good_faith: k === "intimate_imagery" && goodFaith
+    });
+    $("submit").disabled = false;
+    if (error) return setMsg(error.message || "Couldn't send your report. Try again.", "error");
+
+    $("ref").textContent = "#" + data;
+    $("done-text").textContent = k === "intimate_imagery"
+      ? "We'll review your removal request and act on it within 48 hours. If we need more information, we'll email you."
+      : "We'll review it as soon as possible.";
+    $("form-card").classList.add("hidden");
+    $("done-card").classList.remove("hidden");
+    window.scrollTo(0, $("done-card").offsetTop - 20);
+  }
+  $("submit").addEventListener("click", send);
+</script>
+</body>
+</html>
