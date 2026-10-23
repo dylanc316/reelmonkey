@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Moderation · ReelMonkey</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0d12'/><path d='M7 21l6-6 4 4 8-9' fill='none' stroke='%2322c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --ink: #0b0d12; --ink-2: #2b303b; --muted: #6b7280;
+    --line: #e4e6eb; --line-strong: #cfd3da; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a; --warn: #b45309;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  header { background: var(--surface); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 960px; margin: 0 auto; padding: .8rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .logo { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; color: var(--ink); text-decoration: none; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; }
+  .logo-mark svg { width: 18px; height: 18px; }
+  main { max-width: 960px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; }
+  h1 { font-size: 1.6rem; letter-spacing: -.025em; margin: 0 0 1rem; }
+  .tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1.25rem; }
+  .tab { font: inherit; font-size: .88rem; font-weight: 500; padding: .4rem .85rem; cursor: pointer; background: none; color: var(--muted); border: 1px solid transparent; border-radius: 999px; }
+  .tab[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--line-strong); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem 1.25rem; margin-bottom: .9rem; }
+  .card.overdue { border-color: var(--danger); }
+  .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin-bottom: .75rem; }
+  .title { font-weight: 600; }
+  .pill { display: inline-block; font-size: .75rem; font-weight: 600; padding: .1rem .55rem; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); margin-left: .35rem; }
+  .pill.red { color: var(--danger); border-color: #f3c4c4; background: #fff5f5; }
+  .deadline { font-size: .85rem; font-weight: 600; }
+  .deadline.soon { color: var(--warn); }
+  .deadline.late { color: var(--danger); }
+  .body { display: grid; grid-template-columns: 110px 1fr; gap: 1rem; }
+  .thumb { width: 110px; aspect-ratio: 9 / 16; border-radius: 8px; background: #eef0f3; object-fit: cover; display: grid; place-items: center; color: var(--muted); font-size: .75rem; text-align: center; overflow: hidden; }
+  video.thumb { background: #000; }
+  dl { display: grid; grid-template-columns: max-content 1fr; align-content: start; gap: .25rem .9rem; margin: 0; font-size: .88rem; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .actions { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: 1rem; }
+  button { font: inherit; font-size: .85rem; font-weight: 500; padding: .42rem .8rem; cursor: pointer; border-radius: 8px; background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
+  button:hover { border-color: var(--ink); }
+  button.danger { color: #fff; background: var(--danger); border-color: var(--danger); }
+  button.dark { color: #fff; background: var(--ink); border-color: var(--ink); }
+  button:disabled { opacity: .5; cursor: wait; }
+  .copies { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--line-strong); }
+  .copy-grid { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .copy { width: 110px; font-size: .78rem; }
+  .copy .thumb { margin-bottom: .35rem; }
+  .copy button { width: 100%; margin-top: .3rem; }
+  .note { font-size: .85rem; color: var(--muted); margin: .6rem 0 0; }
+  .msg { padding: .8rem 1rem; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+  .empty { color: var(--muted); text-align: center; padding: 2.5rem 1rem; border: 1px dashed var(--line-strong); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--line); }
+  th { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
+  .mono { font-family: var(--mono); font-size: .8rem; }
+  .hidden { display: none !important; }
+  @media (max-width: 600px) { .body { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <a class="logo" href="index.html"><span class="logo-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-9"/></svg></span>ReelMonkey</a>
+  <span style="font-size:.88rem;color:var(--muted)">Moderation</span>
+</div></header>
+
+<main>
+  <h1>Reports</h1>
+  <div id="gate" class="msg">Loading…</div>
+
+  <div id="app" class="hidden">
+    <div class="tabs" role="tablist">
+      <button class="tab" data-tab="open" aria-selected="true">Open</button>
+      <button class="tab" data-tab="all" aria-selected="false">All reports</button>
+      <button class="tab" data-tab="preserved" aria-selected="false">Preserved videos</button>
+    </div>
+    <div id="list"></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<script>
+  const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcmlweG1hcmdyd29wd2lxcmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4ODUxMDgsImV4cCI6MjEwNjQ2MTEwOH0.ho5Shz5eQZDyuiCWwlcd6V8qoc8rrstVXiu_-uFfhzU";
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const $ = (id) => document.getElementById(id);
+
+  const KINDS = { intimate_imagery: "Intimate image removal request", child_safety: "Child safety", copyright: "Copyright", other: "Other" };
+  const DEADLINE_H = 48;
+  let tab = "open";
+
+  function el(tag, className, text) {
+    const n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  const fmt = (t) => new Date(t).toLocaleString();
+  const thumbUrl = (pid) => `https://image.mux.com/${pid}/thumbnail.jpg?width=240&time=1`;
+
+  async function callModerate(body) {
+    const { data, error } = await sb.functions.invoke("moderate", { body });
+    if (error) {
+      let message = "Something went wrong. Try again.";
+      try { const j = await error.context.json(); if (j && j.error) message = j.error; } catch {}
+      throw new Error(message);
+    }
+    return data;
+  }
+
+  function thumb(pid, live) {
+    if (!pid || !live) return el("div", "thumb", live === false ? "Reel removed" : "No video");
+    const img = el("img", "thumb");
+    img.src = thumbUrl(pid);
+    img.alt = "";
+    img.title = "Click to watch";
+    img.style.cursor = "pointer";
+    img.addEventListener("click", () => {
+      const v = el("video", "thumb");
+      v.controls = true; v.playsInline = true;
+      const src = `https://stream.mux.com/${pid}.m3u8`;
+      if (window.Hls && Hls.isSupported()) { const h = new Hls(); h.loadSource(src); h.attachMedia(v); } else v.src = src;
+      img.replaceWith(v);
+      v.play().catch(() => {});
+    });
+    return img;
+  }
+
+  function deadline(r) {
+    if (r.status !== "open") return null;
+    const due = new Date(r.created_at).getTime() + DEADLINE_H * 3600e3;
+    const left = due - Date.now();
+    const span = (ms) => `${Math.floor(ms / 3600e3)}h ${Math.floor((ms % 3600e3) / 60e3)}m`;
+    if (r.kind !== "intimate_imagery") return el("span", "deadline", `Received ${span(Date.now() - new Date(r.created_at).getTime())} ago`);
+    const hours = Math.floor(Math.abs(left) / 3600e3), mins = Math.floor((Math.abs(left) % 3600e3) / 60e3);
+    if (left < 0) return el("span", "deadline late", `OVERDUE by ${hours}h ${mins}m`);
+    return el("span", "deadline" + (left < 12 * 3600e3 ? " soon" : ""), `${hours}h ${mins}m left of 48h`);
+  }
+
+  async function act(btn, fn) {
+    const card = btn.closest(".card");
+    card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    try { await fn(); await load(); }
+    catch (err) { alert(err.message); card.querySelectorAll("button").forEach((b) => (b.disabled = false)); }
+  }
+
+  function removeButtons(r, reelId, isCopy) {
+    const wrap = el("div", "actions");
+    if (isCopy) wrap.style.margin = "0";
+    const remove = el("button", "danger", isCopy ? "Remove copy" : "Remove reel");
+    remove.addEventListener("click", () => {
+      if (!confirm("Remove this reel and delete its video? Anyone holding it is cashed out.")) return;
+      const note = isCopy ? `Copy of report #${r.id}` : prompt("Note for the record (optional):", "") ?? "";
+      act(remove, () => callModerate({ action: "remove", reel_id: reelId, report_id: r.id, preserve: false, note }));
+    });
+    wrap.append(remove);
+    if (!isCopy || r.kind === "child_safety") {
+      const keep = el("button", "dark", isCopy ? "Remove & preserve" : "Remove & preserve (child safety)");
+      keep.addEventListener("click", () => {
+        if (!confirm("Take this video offline but keep the file for the 1-year legal hold?\n\nUse this for child sexual exploitation content. After this, file a CyberTipline report with NCMEC.")) return;
+        const note = prompt("Note for the record (optional, e.g. CyberTipline report number):", "") ?? "";
+        act(keep, async () => {
+          await callModerate({ action: "remove", reel_id: reelId, report_id: r.id, preserve: true, note });
+          alert("Video taken offline and preserved.\n\nNext: file a report at report.cybertip.org, then add the report number as a note on this report.");
+        });
+      });
+      wrap.append(keep);
+    }
+    return wrap;
+  }
+
+  function reportCard(r) {
+    const card = el("article", "card");
+    const head = el("div", "head");
+    const title = el("div", "title", `#${r.id} · ${KINDS[r.kind] || r.kind}`);
+    if (r.kind === "intimate_imagery" || r.kind === "child_safety") title.append(el("span", "pill red", "Priority"));
+    if (r.status !== "open") title.append(el("span", "pill", r.status));
+    head.append(title);
+    const dl = deadline(r);
+    if (dl) { head.append(dl); if (dl.classList.contains("late")) card.classList.add("overdue"); }
+    card.append(head);
+
+    const body = el("div", "body");
+    body.append(thumb(r.mux_playback_id, r.reel_id ? r.reel_exists : null));
+    const d = el("dl");
+    const row = (k, v) => { if (v === null || v === undefined || v === "") return; d.append(el("dt", "", k), el("dd", "", String(v))); };
+    row("Received", fmt(r.created_at));
+    row("Reel", r.reel_id ? `${r.reel_id}${r.reel_exists ? "" : " (no longer exists)"}` : "Not specified");
+    row("Uploader", r.reel_owner_username ? "@" + r.reel_owner_username : "");
+    row("Caption", r.reel_caption);
+    row("Where", r.location);
+    row("Details", r.description);
+    row("Requester", [r.requester_name, r.requester_email].filter(Boolean).join(" · "));
+    if (r.kind === "intimate_imagery") { row("Signature", r.signature); row("Good-faith statement", r.good_faith ? "Yes" : "No"); }
+    if (r.status !== "open") { row("Resolved", r.resolved_at ? fmt(r.resolved_at) : ""); row("Note", r.resolution_note); }
+    body.append(d);
+    card.append(body);
+
+    if (r.status === "open") {
+      const actions = r.reel_id && r.reel_exists ? removeButtons(r, r.reel_id, false) : el("div", "actions");
+      const reject = el("button", "", "Reject");
+      reject.addEventListener("click", () => {
+        const note = prompt("Why is this report being rejected? (kept for the record)", "");
+        if (note === null) return;
+        act(reject, async () => { const { error } = await sb.rpc("admin_resolve_report", { p_id: r.id, p_status: "rejected", p_note: note }); if (error) throw error; });
+      });
+      const resolve = el("button", "", "Mark resolved");
+      resolve.addEventListener("click", () => {
+        const note = prompt("What was done? (kept for the record)", "");
+        if (note === null) return;
+        act(resolve, async () => { const { error } = await sb.rpc("admin_resolve_report", { p_id: r.id, p_status: "resolved", p_note: note }); if (error) throw error; });
+      });
+      actions.append(reject, resolve);
+      if (r.reel_owner_id) {
+        const copiesBtn = el("button", "", "Find copies by this uploader");
+        copiesBtn.addEventListener("click", () => showCopies(card, r, copiesBtn));
+        actions.append(copiesBtn);
+      }
+      card.append(actions);
+      if (!r.reel_id || !r.reel_exists) card.append(el("p", "note", "No live reel is attached. Use “Where” to find it in the market, then use that reel's Report button. It will show up here with removal buttons."));
+    }
+    return card;
+  }
+
+  async function showCopies(card, r, btn) {
+    btn.disabled = true;
+    const { data, error } = await sb.rpc("admin_reels_by_owner", { p_owner: r.reel_owner_id });
+    btn.disabled = false;
+    if (error) return alert(error.message);
+    card.querySelector(".copies")?.remove();
+    const box = el("div", "copies");
+    const others = data.filter((x) => x.id !== r.reel_id);
+    box.append(el("p", "note", others.length ? "Other reels by this uploader. Remove any that contain the same content:" : "This uploader has no other reels."));
+    const grid = el("div", "copy-grid");
+    others.forEach((x) => {
+      const c = el("div", "copy");
+      c.append(thumb(x.mux_playback_id, x.status === "ready"), el("div", "", x.caption || "No caption"), removeButtons(r, x.id, true));
+      grid.append(c);
+    });
+    box.append(grid);
+    card.append(box);
+  }
+
+  async function loadPreserved() {
+    const { data, error } = await sb.rpc("admin_list_preserved");
+    if (error) throw error;
+    const list = $("list");
+    if (!data.length) { list.replaceChildren(el("div", "empty", "No preserved videos.")); return; }
+    const table = el("table");
+    const thead = el("tr");
+    ["Report", "Mux asset", "Preserved", "Keep until", ""].forEach((h) => thead.append(el("th", "", h)));
+    table.append(thead);
+    data.forEach((p) => {
+      const tr = el("tr");
+      tr.append(el("td", "", p.report_id ? "#" + p.report_id : "—"), el("td", "mono", p.mux_asset_id), el("td", "", new Date(p.created_at).toLocaleDateString()), el("td", "", p.purge_after));
+      const cell = el("td");
+      if (p.purged_at) cell.textContent = "Purged " + new Date(p.purged_at).toLocaleDateString();
+      else {
+        const b = el("button", "danger", "Purge");
+        b.addEventListener("click", async () => {
+          const early = new Date(p.purge_after + "T00:00:00") > new Date();
+          if (!confirm(early ? "The 1-year legal hold isn't over yet. Permanently delete this video anyway?" : "Permanently delete this video from Mux?")) return;
+          b.disabled = true;
+          try { await callModerate({ action: "purge", preserved_id: p.id }); await load(); }
+          catch (err) { alert(err.message); b.disabled = false; }
+        });
+        cell.append(b);
+      }
+      tr.append(cell);
+      table.append(tr);
+    });
+    list.replaceChildren(table);
+  }
+
+  async function load() {
+    document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+    try {
+      if (tab === "preserved") return await loadPreserved();
+      const { data, error } = await sb.rpc("admin_list_reports", { p_status: tab });
+      if (error) throw error;
+      const list = $("list");
+      if (!data.length) { list.replaceChildren(el("div", "empty", tab === "open" ? "No open reports." : "No reports yet.")); return; }
+      list.replaceChildren(...data.map(reportCard));
+    } catch (err) {
+      $("list").replaceChildren(el("div", "msg", "Couldn't load: " + err.message));
+    }
+  }
+
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => { tab = t.dataset.tab; load(); }));
+
+  (async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { $("gate").innerHTML = 'Sign in on the <a href="index.html">main site</a> first, then come back to this page.'; return; }
+    const { error } = await sb.rpc("admin_list_reports", { p_status: "open" });
+    if (error) { $("gate").textContent = "This page is only for moderators."; return; }
+    $("gate").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    load();
+    // Keep deadlines current, but don't refresh while a video or the copies list is open
+    setInterval(() => { if (tab === "open" && !document.hidden && !document.querySelector("#list video, #list .copies")) load(); }, 60000);
+  })();
+</script>
+</body>
+</html>
