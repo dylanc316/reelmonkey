@@ -185,6 +185,24 @@
   .thumb-status:hover { transform: none; box-shadow: none; }
   .thumb-status small { font-size: .74rem; font-weight: 400; }
   .thumb-status.failed { color: var(--danger); cursor: pointer; }
+  .thumb.local video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb.draft img { opacity: .65; }
+  .thumb-badge { position: absolute; top: .4rem; left: .4rem; width: max-content; max-width: calc(100% - .8rem); font-size: .7rem; font-weight: 700; padding: .12rem .45rem; border-radius: 999px; background: rgba(11,13,18,.78); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.35); }
+  .thumb-progress span { display: block; height: 100%; width: 0; background: var(--up-bright); transition: width .3s ease; }
+
+  /* Post form: the picked video starts uploading right away */
+  .up-card { display: flex; gap: .85rem; align-items: center; margin: -.25rem 0 1rem; padding: .6rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .up-card video { width: 54px; height: 96px; object-fit: cover; border-radius: 6px; background: #000; flex: none; }
+  .up-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; align-items: flex-start; }
+  .up-status { font-size: .88rem; font-weight: 500; }
+  .bar { width: 100%; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--up); border-radius: inherit; transition: width .3s ease; }
+  .bar.busy span { width: 35%; animation: bar-slide 1.2s ease-in-out infinite; }
+  @keyframes bar-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  #up-discard { font-size: .82rem; color: var(--muted); font-weight: 500; }
+  .upload-pill { font: inherit; font-size: .82rem; font-weight: 600; padding: .35rem .75rem; border-radius: 999px; border: 0; background: var(--ink); color: #fff; cursor: pointer; white-space: nowrap; }
+  .upload-pill.live { background: var(--up); }
   .empty { color: var(--muted); font-size: .92rem; text-align: center; padding: 2.5rem 1rem; border: 1px dashed var(--line-strong); border-radius: 8px; margin: 0; }
 
   .table-wrap { overflow-x: auto; }
@@ -548,6 +566,7 @@
           <button data-page="leaderboard">Leaderboard</button>
           <button data-page="profile">Profile</button>
         </nav>
+        <button id="upload-pill" class="upload-pill hidden" aria-live="polite"></button>
         <button id="balance-chip" class="balance-chip signed-in-only" title="Your balance">$0.00</button>
         <button id="hdr-login" class="ghost signed-out-only">Log in</button>
         <button id="hdr-signup" class="solid signed-out-only">Sign up</button>
@@ -635,14 +654,22 @@
 
       <div class="layout">
         <section class="panel upload">
-          <div class="panel-head"><h3>Upload a reel</h3></div>
+          <div class="panel-head"><h3>Post a reel</h3></div>
           <div class="panel-body">
             <label for="video-file">Video (MP4, MOV or WebM, up to 500 MB and 90 seconds)</label>
             <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.webm,.m4v">
+            <div id="up-card" class="up-card hidden">
+              <video id="up-preview" muted loop playsinline aria-label="Preview of your video"></video>
+              <div class="up-info">
+                <div id="up-status" class="up-status"></div>
+                <div id="up-bar" class="bar"><span></span></div>
+                <button id="up-discard" class="link">Discard</button>
+              </div>
+            </div>
             <label for="caption">Caption (optional)</label>
-            <textarea id="caption" maxlength="300"></textarea>
+            <textarea id="caption" maxlength="300" placeholder="Your video uploads while you write this"></textarea>
             <p id="upload-msg" class="msg" role="status" aria-live="polite"></p>
-            <button id="upload-btn" class="primary">Upload reel</button>
+            <button id="upload-btn" class="primary" disabled>Post reel</button>
           </div>
         </section>
 
@@ -733,6 +760,7 @@
     <button id="player-delete" class="danger">Delete reel</button>
     <div class="player-right">
       <a id="player-report" class="ghost" href="report.html" target="_blank" rel="noopener">Report</a>
+      <button id="player-post" class="solid hidden">Post</button>
       <button id="player-close" class="ghost">Close</button>
     </div>
   </div>
@@ -881,7 +909,8 @@
     if (name !== "discover") params.set("page", name);
     else if (slides[activeSlide]) params.set("reel", slides[activeSlide].id);
     const q = params.toString();
-    history.replaceState(null, "", window.location.pathname + (q ? "?" + q : "") + window.location.hash);
+    // Some embedded previews (e.g. about:srcdoc) don't allow changing the URL; the page works without it
+    try { history.replaceState(null, "", window.location.pathname + (q ? "?" + q : "") + window.location.hash); } catch {}
   }
 
   function showPage(name) {
@@ -944,6 +973,7 @@
     profile = null;
     updateChrome();
     closeTrade();
+    renderPill();
     restorePage = null; // signed-out visitors only have Discover
     if (screen === "app") showPage("discover");
     // Forget this account's votes and holdings on reels already in the feed
@@ -1870,22 +1900,39 @@
   }
 
   // =====================================================================
-  // Create: upload + your reels + creator earnings
-  // Videos are uploaded straight to Mux (any common format, including iPhone .mov/HEVC),
-  // converted there, and streamed from Mux. The Edge Functions create and delete reel rows.
+  // Create: posting reels + your reels + creator earnings
+  // Videos go straight to Mux (any common format, including iPhone .mov/HEVC), are converted
+  // there and streamed from Mux. The Edge Functions create and delete reel rows.
+  //
+  // To feel fast, the upload starts the moment a video is picked, as a hidden draft, while
+  // the creator writes the caption. Post publishes it (post_reel). If Mux has already
+  // finished, it's live instantly; otherwise it goes live as soon as processing is done,
+  // and the creator can keep using the site meanwhile (top-bar pill shows progress).
   // =====================================================================
   const MAX_MB = 500;
   const MAX_SECONDS = 90;
   const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
   const ALLOWED_EXT = /\.(mp4|mov|webm|m4v)$/i;
   const CHUNK_BYTES = 8 * 1024 * 1024; // Mux requires chunks in multiples of 256 KB
-  const PENDING_POLL_MS = 5000;
+  const PENDING_POLL_MS = 3000;        // refresh "Your reels" while something is processing
+  const LIVE_POLL_MS = 2000;           // check whether uploads have finished processing
   let myReels = [];
   let pendingTimer = null;
 
-  function setUploadMsg(text, kind = "") { $("upload-msg").textContent = text; $("upload-msg").className = "msg " + kind; }
+  // Uploads started in this tab, by reel id:
+  // { reelId, file, previewUrl, sent (0-1), uploaded, posted, status, xhr, cancelled, row }
+  // status: "starting" | "uploading" | "processing" | "draft" (processed, not posted) | "live"
+  const uploads = new Map();
+  let formUpload = null;   // the upload in the Post form that hasn't been posted yet
+  let liveTimer = null;
+  let pillLive = null;     // the reel that just went live, shown in the top-bar pill for a few seconds
+  let pillTimer = null;
+  let progressFrame = 0;
 
-  // Best-effort length check before uploading. Returns null if this browser can't read the file
+  function setUploadMsg(text, kind = "") { $("upload-msg").textContent = text; $("upload-msg").className = "msg " + kind; }
+  const pct = (u) => Math.floor(u.sent * 100) + "%";
+
+  // Best-effort length check. Returns null if this browser can't read the file
   // (e.g. some HEVC videos outside Safari); Mux enforces the limit after upload either way.
   function readDuration(file) {
     return new Promise((resolve) => {
@@ -1901,64 +1948,263 @@
     });
   }
 
+  // One chunk, with byte-by-byte progress so the bar moves smoothly
+  function putChunk(url, file, start, end, u) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      u.xhr = xhr;
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Range", `bytes ${start}-${end - 1}/${file.size}`);
+      xhr.upload.onprogress = (e) => { u.sent = Math.min(1, (start + e.loaded) / file.size); scheduleRender(); };
+      // 308 = chunk received, send the next one
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) || xhr.status === 308
+        ? resolve() : reject(new Error(`Upload failed (${xhr.status}).`));
+      xhr.onerror = () => reject(new Error("network"));
+      xhr.onabort = () => reject(new Error("cancelled"));
+      xhr.send(file.slice(start, end));
+    });
+  }
+
   // Sends the file to Mux in resumable chunks, retrying each chunk a few times.
-  async function uploadInChunks(url, file, onProgress) {
+  async function uploadInChunks(url, file, u) {
     let start = 0;
     while (start < file.size) {
       const end = Math.min(start + CHUNK_BYTES, file.size);
       for (let attempt = 1; ; attempt++) {
-        try {
-          const res = await fetch(url, {
-            method: "PUT",
-            headers: { "Content-Range": `bytes ${start}-${end - 1}/${file.size}` },
-            body: file.slice(start, end)
-          });
-          if (res.ok || res.status === 308) break; // 308 = chunk received, send the next one
-          throw new Error(`Upload failed (${res.status}).`);
-        } catch (err) {
+        if (u.cancelled) throw new Error("cancelled");
+        try { await putChunk(url, file, start, end, u); break; }
+        catch (err) {
+          if (u.cancelled) throw err;
           if (attempt >= 3) throw new Error("Upload failed. Check your connection and try again.");
+          u.sent = start / file.size;
           await new Promise((r) => setTimeout(r, 1000 * attempt));
         }
       }
       start = end;
-      onProgress(start / file.size);
     }
   }
 
-  async function uploadReel() {
+  function rejectPick(message) {
+    $("video-file").value = "";
+    setUploadMsg(message, "error");
+  }
+
+  // Picking a video starts uploading it straight away
+  async function pickVideo() {
     const file = $("video-file").files[0];
-    if (!file) return setUploadMsg("Choose a video first.", "error");
-    if (!ALLOWED_TYPES.includes(file.type) && !ALLOWED_EXT.test(file.name)) return setUploadMsg("Only MP4, MOV and WebM videos are supported.", "error");
-    if (file.size === 0) return setUploadMsg("This file is empty.", "error");
-    if (file.size > MAX_MB * 1024 * 1024) return setUploadMsg(`Video must be under ${MAX_MB} MB.`, "error");
+    if (!file) return;
+    setUploadMsg("");
+    if (!ALLOWED_TYPES.includes(file.type) && !ALLOWED_EXT.test(file.name)) return rejectPick("Only MP4, MOV and WebM videos are supported.");
+    if (file.size === 0) return rejectPick("This file is empty.");
+    if (file.size > MAX_MB * 1024 * 1024) return rejectPick(`Video must be under ${MAX_MB} MB.`);
+    if (formUpload) discardUpload(formUpload); // a new pick replaces the unposted one
 
-    $("upload-btn").disabled = true;
-    setUploadMsg("Preparing video…");
-    let reelId = null;
+    const u = { reelId: null, file, previewUrl: URL.createObjectURL(file), sent: 0, uploaded: false, posted: false,
+                status: "starting", xhr: null, cancelled: false, row: null };
+    formUpload = u;
+    renderUploads();
+
+    // The length check runs alongside the upload; a video that's too long is cancelled when we find out
+    readDuration(file).then((d) => { if (d !== null && d > MAX_SECONDS) failUpload(u, `Videos can be at most ${MAX_SECONDS} seconds.`); });
+
+    let created;
+    try { created = await callFunction("mux-upload", { draft: true }); }
+    catch (err) { return failUpload(u, err.message); }
+    u.reelId = created.reel_id;
+    if (u.cancelled) return removeReel(u.reelId); // discarded while we were setting up
+    uploads.set(u.reelId, u);
+    u.status = "uploading";
+    renderUploads();
+    if (page === "create") loadReels();
+
     try {
-      const duration = await readDuration(file);
-      if (duration !== null && duration > MAX_SECONDS) throw new Error(`Videos can be at most ${MAX_SECONDS} seconds.`);
-
-      const { reel_id, upload_url } = await callFunction("mux-upload", { caption: $("caption").value.trim() });
-      reelId = reel_id;
-      loadReels(); // shows the "Uploading…" tile
-
-      setUploadMsg("Uploading… 0%");
-      await uploadInChunks(upload_url, file, (f) => setUploadMsg(`Uploading… ${Math.round(f * 100)}%`));
-
-      $("video-file").value = "";
-      $("caption").value = "";
-      setUploadMsg("Uploaded! Your reel will appear in Discover once it's processed.", "ok");
-      loadReels();
+      await uploadInChunks(created.upload_url, file, u);
     } catch (err) {
-      // Don't leave a half-finished reel behind if any step failed
-      if (reelId) await callFunction("mux-delete", { reel_id: reelId }).catch(() => {});
-      setUploadMsg(err.message || "Upload failed. Try again.", "error");
-      loadReels();
-    } finally {
-      $("upload-btn").disabled = false;
+      if (!u.cancelled) failUpload(u, err.message);
+      return;
+    }
+    if (u.cancelled) return;
+    u.uploaded = true;
+    u.sent = 1;
+    if (u.status === "uploading") u.status = "processing";
+    renderUploads();
+    watchUploads();
+  }
+
+  // Cancel the transfer and delete the reel row and Mux upload behind it
+  function stopUpload(u) {
+    if (!u || u.cancelled) return;
+    u.cancelled = true;
+    if (u.xhr) u.xhr.abort();
+    if (u.reelId) { uploads.delete(u.reelId); removeReel(u.reelId); }
+    if (u === formUpload) {
+      formUpload = null;
+      $("video-file").value = "";
     }
   }
+  function discardUpload(u) {
+    stopUpload(u);
+    renderUploads();
+  }
+  function failUpload(u, message) {
+    if (u.cancelled) return;
+    const inForm = u === formUpload;
+    stopUpload(u);
+    if (inForm) setUploadMsg(message || "Upload failed. Try again.", "error");
+    else toast(message || "Your upload failed. Try again.", "error");
+    renderUploads();
+  }
+  async function removeReel(id) {
+    await callFunction("mux-delete", { reel_id: id }).catch(() => {});
+    if (page === "create") loadReels();
+  }
+
+  // Publish the video in the form. Uploading/processing carries on in the background.
+  async function postReel() {
+    const u = formUpload;
+    if (!u || !u.reelId) return setUploadMsg("Choose a video first.", "error");
+    $("upload-btn").disabled = true;
+    const { data: status, error } = await sb.rpc("post_reel", { p_reel_id: u.reelId, p_caption: $("caption").value.trim() });
+    if (error) {
+      $("upload-btn").disabled = false;
+      return setUploadMsg(error.message, "error");
+    }
+    u.posted = true;
+    formUpload = null;
+    $("video-file").value = "";
+    $("caption").value = "";
+    setUploadMsg("");
+    if (status === "ready") announceLive(u);
+    else {
+      toast("Posting your reel. Keep scrolling, we'll let you know when it's live.", "ok");
+      watchUploads();
+    }
+    renderUploads();
+    showPage("discover");
+  }
+
+  // Poll until uploads finish processing (or fail)
+  async function watchUploads() {
+    clearTimeout(liveTimer);
+    const waiting = [...uploads.values()].filter((u) => u.uploaded && !u.cancelled && u.status === "processing");
+    if (!waiting.length || !currentUser) return;
+    const { data } = await sb.from("reels").select("id, user_id, status, caption, mux_playback_id, failure_reason")
+      .in("id", waiting.map((u) => u.reelId));
+    (data || []).forEach((row) => {
+      const u = uploads.get(row.id);
+      if (!u || u.cancelled) return;
+      u.row = row;
+      if (row.status === "failed") failUpload(u, row.failure_reason ? "Processing failed: " + row.failure_reason : "Mux couldn't process that video. Try another file.");
+      else if (row.status === "ready") announceLive(u);
+      else if (row.status === "draft") u.status = "draft"; // processed; waiting for the creator to press Post
+    });
+    renderUploads();
+    if (page === "create") loadReels();
+    liveTimer = setTimeout(watchUploads, LIVE_POLL_MS);
+  }
+
+  async function announceLive(u) {
+    u.status = "live";
+    uploads.delete(u.reelId);
+    if (!u.row || !u.row.mux_playback_id) {
+      const { data } = await sb.from("reels").select("id, user_id, status, caption, mux_playback_id").eq("id", u.reelId).single();
+      if (data) u.row = data;
+    }
+    pillLive = u.row;
+    clearTimeout(pillTimer);
+    pillTimer = setTimeout(() => { pillLive = null; renderPill(); }, 12000);
+    toast("Your reel is live 🎉", "ok");
+    renderUploads();
+    if (page === "create") loadReels();
+  }
+
+  function formLabel(u) {
+    if (u.status === "starting") return "Starting upload…";
+    if (u.status === "uploading") return `Uploading… ${pct(u)} · write your caption meanwhile`;
+    if (u.status === "processing") return "Uploaded · finishing up…";
+    return "Ready to post";
+  }
+  function tileLabel(u) {
+    if (u.status === "starting" || u.status === "uploading") return (u.posted ? "Posting " : "Draft · ") + pct(u);
+    if (u.status === "processing") return u.posted ? "Processing…" : "Draft · processing";
+    return u.posted ? "Live" : "Draft";
+  }
+  function setBar(bar, u) {
+    const busy = u.status === "starting" || u.status === "processing";
+    bar.classList.toggle("busy", busy);
+    bar.querySelector("span").style.width = busy ? "" : u.status === "uploading" ? (u.sent * 100).toFixed(1) + "%" : "100%";
+  }
+
+  function scheduleRender() {
+    if (progressFrame) return;
+    progressFrame = requestAnimationFrame(() => { progressFrame = 0; renderUploads(); });
+  }
+
+  // Updates the Post form, the progress on "Your reels" tiles, and the top-bar pill
+  function renderUploads() {
+    const u = formUpload;
+    const preview = $("up-preview");
+    $("up-card").classList.toggle("hidden", !u);
+    if (u) {
+      if (preview.dataset.src !== u.previewUrl) {
+        preview.src = u.previewUrl;
+        preview.dataset.src = u.previewUrl;
+        preview.play().catch(() => {});
+      }
+      $("up-status").textContent = formLabel(u);
+      setBar($("up-bar"), u);
+    } else if (preview.dataset.src) {
+      preview.removeAttribute("src");
+      delete preview.dataset.src;
+      preview.load();
+    }
+    $("upload-btn").disabled = !u || !u.reelId;
+
+    document.querySelectorAll("[data-upload]").forEach((tile) => {
+      const x = uploads.get(tile.dataset.upload) || (formUpload && formUpload.reelId === tile.dataset.upload ? formUpload : null);
+      if (!x) return;
+      tile.querySelector(".thumb-badge").textContent = tileLabel(x);
+      tile.querySelector(".thumb-progress span").style.width = (x.status === "uploading" ? x.sent * 100 : 100) + "%";
+    });
+    renderPill();
+  }
+
+  function renderPill() {
+    const pill = $("upload-pill");
+    const active = [...uploads.values()].filter((u) => u.posted && !u.cancelled && u.status !== "live");
+    pill.classList.remove("live");
+    if (active.length && currentUser) {
+      const u = active[0];
+      pill.textContent = (u.status === "uploading" || u.status === "starting" ? `Posting… ${pct(u)}` : "Processing…")
+        + (active.length > 1 ? ` +${active.length - 1}` : "");
+      pill.title = "Your reel is posting. You can keep using ReelMonkey.";
+      pill.dataset.mode = "posting";
+      pill.classList.remove("hidden");
+    } else if (pillLive && currentUser) {
+      pill.textContent = "✓ Live · View";
+      pill.title = "Your reel is live";
+      pill.dataset.mode = "live";
+      pill.classList.add("live");
+      pill.classList.remove("hidden");
+    } else {
+      pill.classList.add("hidden");
+    }
+  }
+  function pillClicked() {
+    if ($("upload-pill").dataset.mode === "live" && pillLive) {
+      openPlayer(pillLive);
+      pillLive = null;
+      renderPill();
+    } else {
+      showPage("create");
+    }
+  }
+
+  // Don't let people close the tab halfway through sending a video
+  window.addEventListener("beforeunload", (e) => {
+    const sending = [...uploads.values(), formUpload].some((u) => u && !u.cancelled && !u.uploaded);
+    if (sending) { e.preventDefault(); e.returnValue = ""; }
+  });
 
   // Tile for a reel that isn't playable yet (uploading/processing) or that failed
   function statusTile(reel) {
@@ -1975,6 +2221,32 @@
       });
     }
     return tile;
+  }
+
+  // Tile for an upload happening in this tab: shows the video from the device with its progress
+  function localTile(reel, u) {
+    const tile = el("div", "thumb local");
+    tile.dataset.upload = reel.id;
+    const v = el("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    v.src = u.previewUrl + "#t=0.5";
+    const bar = el("div", "thumb-progress");
+    const fill = el("span");
+    fill.style.width = (u.status === "uploading" ? u.sent * 100 : 100) + "%";
+    bar.append(fill);
+    tile.append(v, el("span", "thumb-badge", tileLabel(u)), bar);
+    return tile;
+  }
+
+  // Tile for an earlier upload that was processed but never posted
+  function draftTile(reel) {
+    const btn = thumbButton(reel);
+    btn.classList.add("draft");
+    btn.setAttribute("aria-label", "Draft: open to post or delete");
+    btn.append(el("span", "thumb-badge", "Draft · tap to post"));
+    return btn;
   }
 
   async function loadReels() {
@@ -1996,6 +2268,9 @@
     const grid = $("grid");
     grid.replaceChildren();
     myReels.forEach((reel) => {
+      const u = uploads.get(reel.id) || (formUpload && formUpload.reelId === reel.id ? formUpload : null);
+      if (u && !u.cancelled && reel.status !== "ready" && reel.status !== "failed") return grid.appendChild(localTile(reel, u));
+      if (reel.status === "draft") return grid.appendChild(draftTile(reel));
       if (reel.status !== "ready") return grid.appendChild(statusTile(reel));
       const btn = thumbButton(reel);
       const s = stats[reel.id];
@@ -2038,6 +2313,7 @@
     $("player-delete").classList.toggle("hidden", !mine);
     $("player-report").href = "report.html?reel=" + encodeURIComponent(reel.id);
     $("player-report").classList.toggle("hidden", mine);
+    $("player-post").classList.toggle("hidden", !(mine && reel.status === "draft"));
     $("player").showModal();
     video.play().catch(() => {}); // autoplay may be blocked; controls still work
   }
@@ -2051,6 +2327,18 @@
     $("player-video").load();
     openReel = null;
   });
+
+  // Post a draft (an upload from earlier that was never posted)
+  async function postDraft() {
+    if (!openReel) return;
+    const caption = prompt("Caption (optional):", openReel.caption || "");
+    if (caption === null) return;
+    const { error } = await sb.rpc("post_reel", { p_reel_id: openReel.id, p_caption: caption });
+    if (error) return alert(error.message);
+    closePlayer();
+    toast("Posted! Your reel is live.", "ok");
+    loadReels();
+  }
 
   async function deleteReel() {
     if (!openReel) return;
@@ -2242,7 +2530,11 @@
 
   $("delete-account").addEventListener("click", deleteAccount);
   $("logout").addEventListener("click", async () => { await sb.auth.signOut(); });
-  $("upload-btn").addEventListener("click", uploadReel);
+  $("video-file").addEventListener("change", pickVideo);
+  $("upload-btn").addEventListener("click", postReel);
+  $("up-discard").addEventListener("click", () => { discardUpload(formUpload); setUploadMsg("Discarded."); });
+  $("upload-pill").addEventListener("click", pillClicked);
+  $("player-post").addEventListener("click", postDraft);
   $("player-close").addEventListener("click", closePlayer);
   $("player-delete").addEventListener("click", deleteReel);
   $("player").addEventListener("click", (e) => { if (e.target === $("player")) closePlayer(); }); // click backdrop to close
