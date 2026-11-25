@@ -2313,6 +2313,16 @@
     return btn;
   }
 
+  // "Your reels" tiles by reel id, with a key describing what they show
+  const tileCache = new Map();
+  function keptTile(id, key, build) {
+    const kept = tileCache.get(id);
+    if (kept && kept.key === key) return kept.node;
+    const node = build();
+    tileCache.set(id, { key, node });
+    return node;
+  }
+
   async function loadReels() {
     if (!currentUser) return;
     // Fails uploads that stopped over an hour ago, and lists the ones that stopped recently
@@ -2332,23 +2342,32 @@
       summary.data.reels.forEach((r) => { stats[r.reel_id] = r; });
     }
 
-    const grid = $("grid");
-    grid.replaceChildren();
-    myReels.forEach((reel) => {
+    // Tiles that haven't changed are kept rather than rebuilt, so their pictures don't
+    // flash blank every time this refreshes (every few seconds while something uploads).
+    const tiles = myReels.map((reel) => {
       const u = uploads.get(reel.id) || (formUpload && formUpload.reelId === reel.id ? formUpload : null);
-      if (u && !u.cancelled && reel.status !== "ready" && reel.status !== "failed") return grid.appendChild(localTile(reel, u));
-      if (reel.status === "uploading" && interruptedIds.has(reel.id)) return grid.appendChild(interruptedTile(reel));
-      if (reel.status === "draft") return grid.appendChild(draftTile(reel));
-      if (reel.status !== "ready") return grid.appendChild(statusTile(reel));
-      const btn = thumbButton(reel);
-      const s = stats[reel.id];
-      if (s) {
-        const meta = el("div", "thumb-meta");
-        meta.append(el("span", "", `${LIKE_EMOJI} ${compact(s.likes)}`), el("span", "", money(s.royalties)));
-        btn.append(meta);
+      if (u && !u.cancelled && reel.status !== "ready" && reel.status !== "failed") {
+        return keptTile(reel.id, "local", () => localTile(reel, u)); // progress is updated in place by renderUploads
       }
-      grid.appendChild(btn);
+      if (reel.status === "uploading" && interruptedIds.has(reel.id)) return keptTile(reel.id, "interrupted", () => interruptedTile(reel));
+      if (reel.status === "draft") return keptTile(reel.id, "draft|" + reel.mux_playback_id + "|" + reel.caption, () => draftTile(reel));
+      if (reel.status !== "ready") return keptTile(reel.id, "status|" + reel.status + "|" + reel.failure_reason, () => statusTile(reel));
+      const s = stats[reel.id];
+      return keptTile(reel.id, ["ready", reel.mux_playback_id, reel.caption, s && s.likes, s && s.royalties].join("|"), () => {
+        const btn = thumbButton(reel);
+        if (s) {
+          const meta = el("div", "thumb-meta");
+          meta.append(el("span", "", `${LIKE_EMOJI} ${compact(s.likes)}`), el("span", "", money(s.royalties)));
+          btn.append(meta);
+        }
+        return btn;
+      });
     });
+    const shown = new Set(myReels.map((r) => r.id));
+    [...tileCache.keys()].forEach((id) => { if (!shown.has(id)) tileCache.delete(id); });
+    const grid = $("grid");
+    // Only touch the grid if a tile was added, removed, replaced or reordered
+    if (tiles.length !== grid.children.length || tiles.some((t, i) => grid.children[i] !== t)) grid.replaceChildren(...tiles);
     $("empty").classList.toggle("hidden", myReels.length > 0);
 
     // While anything is still uploading/processing, check back until it's ready
