@@ -867,10 +867,27 @@
   }
 
   const PAGES = ["discover", "portfolio", "create", "leaderboard", "profile"];
-  let page = "discover";
+  // The address bar remembers where you are (?page=portfolio, or ?reel=<id> on Discover),
+  // so reloading brings you back to the same page once we know you're signed in.
+  const startParams = new URLSearchParams(window.location.search);
+  const sharedReel = startParams.get("reel");
+  let restorePage = PAGES.includes(startParams.get("page")) && startParams.get("page") !== "discover" ? startParams.get("page") : null;
+  let page = restorePage ? null : "discover"; // null = waiting to hear whether this visitor is signed in
+
+  function setPageUrl(name) {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("page");
+    params.delete("reel");
+    if (name !== "discover") params.set("page", name);
+    else if (slides[activeSlide]) params.set("reel", slides[activeSlide].id);
+    const q = params.toString();
+    history.replaceState(null, "", window.location.pathname + (q ? "?" + q : "") + window.location.hash);
+  }
+
   function showPage(name) {
     if (!currentUser) name = "discover";
     page = name;
+    setPageUrl(name);
     PAGES.forEach((p) => $(p + "-page").classList.toggle("hidden", p !== name));
     document.querySelectorAll("[data-page]").forEach((b) => b.setAttribute("aria-current", b.dataset.page === name ? "page" : "false"));
     if (name === "discover") resumeFeed(); else pauseFeed();
@@ -913,7 +930,8 @@
 
     const intent = pendingIntent;
     pendingIntent = null;
-    showPage("discover");
+    showPage(intent ? "discover" : restorePage || "discover");
+    restorePage = null;
     const bonus = await sb.rpc("collect_daily_bonus");
     if (!bonus.error && Number(bonus.data) > 0) toast(`${money(bonus.data)} daily bonus added to your balance.`, "ok");
     await loadBalance();
@@ -926,6 +944,7 @@
     profile = null;
     updateChrome();
     closeTrade();
+    restorePage = null; // signed-out visitors only have Discover
     if (screen === "app") showPage("discover");
     // Forget this account's votes and holdings on reels already in the feed
     Object.values(feedReels).forEach((r) => { r.my_vote = null; r.my_shares = 0; r.my_predictions = 0; r.is_mine = false; });
@@ -1266,7 +1285,7 @@
     s.video.currentTime = 0;
     if (screen === "app" && page === "discover" && !document.hidden) playVideo(s.video);
     // Keep the address bar on the current reel so refreshing or copying the link brings it back
-    history.replaceState(null, "", window.location.pathname + "?reel=" + encodeURIComponent(s.id) + window.location.hash);
+    if (page === "discover") setPageUrl("discover");
     if (trade.open && trade.follow && trade.reelId !== s.id) openTrade(s.id, { follow: true });
     if (index >= slides.length - 3) loadMoreReels();
   }
@@ -1301,9 +1320,8 @@
   async function startFeed() {
     if (feedStarted || !sb) return;
     feedStarted = true;
-    const shared = new URLSearchParams(window.location.search).get("reel");
-    if (shared && /^[0-9a-f-]{36}$/i.test(shared)) {
-      const { data } = await sb.rpc("get_reels_public", { p_ids: [shared] });
+    if (sharedReel && /^[0-9a-f-]{36}$/i.test(sharedReel)) {
+      const { data } = await sb.rpc("get_reels_public", { p_ids: [sharedReel] });
       if (data && data.length) addSlides(data);
       else toast("That reel isn't available anymore.", "error");
     }
@@ -2239,7 +2257,8 @@
 
   setMode("signup");
   updateChrome();
-  showPage("discover");
+  if (restorePage) $("discover-page").classList.add("hidden");
+  else showPage("discover");
 
   if (sb) {
     startFeed();
