@@ -203,6 +203,10 @@
   #up-discard { font-size: .82rem; color: var(--muted); font-weight: 500; }
   .upload-pill { font: inherit; font-size: .82rem; font-weight: 600; padding: .35rem .75rem; border-radius: 999px; border: 0; background: var(--ink); color: #fff; cursor: pointer; white-space: nowrap; }
   .upload-pill.live { background: var(--up); }
+  .thumb-status.interrupted { color: var(--ink-2); gap: .45rem; }
+  .tile-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-top: .2rem; }
+  .tile-actions button { padding: .3rem .6rem; font-size: .78rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
   .empty { color: var(--muted); font-size: .92rem; text-align: center; padding: 2.5rem 1rem; border: 1px dashed var(--line-strong); border-radius: 8px; margin: 0; }
 
   .table-wrap { overflow-x: auto; }
@@ -658,6 +662,7 @@
           <div class="panel-body">
             <label for="video-file">Video (MP4, MOV or WebM, up to 500 MB and 90 seconds)</label>
             <input id="video-file" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.webm,.m4v">
+            <input id="resume-file" class="sr-only" type="file" tabindex="-1" aria-hidden="true" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,.mp4,.mov,.webm,.m4v">
             <div id="up-card" class="up-card hidden">
               <video id="up-preview" muted loop playsinline aria-label="Preview of your video"></video>
               <div class="up-info">
@@ -1948,48 +1953,138 @@
     });
   }
 
-  // One chunk, with byte-by-byte progress so the bar moves smoothly
+  // ---------- Resumable sending ----------
+  // Each upload in progress is remembered on this device (localStorage) with its Mux upload
+  // link. If the tab closes, picking the same video again carries on where it stopped.
+  const UPLOAD_RECORDS_KEY = "reelmonkey-uploads";
+  const RESUME_WINDOW_MS = 55 * 60 * 1000; // Mux upload links expire an hour after they're created
+  const HEARTBEAT_MS = 15000;              // tells the server this tab is still sending
+  const CHUNK_TIMEOUT_MS = 180000;         // a stalled connection (e.g. a phone that slept) is retried after this
+  let interruptedIds = new Set();          // this user's uploads that stopped (from tidy_my_uploads)
+  let resumeTarget = null;                 // reel whose Resume button opened the file picker
+
+  function readRecords() { try { return JSON.parse(localStorage.getItem(UPLOAD_RECORDS_KEY)) || {}; } catch { return {}; } }
+  function writeRecords(recs) { try { localStorage.setItem(UPLOAD_RECORDS_KEY, JSON.stringify(recs)); } catch {} }
+  function saveRecord(reelId, fields) { const recs = readRecords(); recs[reelId] = { ...(recs[reelId] || {}), ...fields }; writeRecords(recs); }
+  function dropRecord(reelId) { const recs = readRecords(); if (recs[reelId]) { delete recs[reelId]; writeRecords(recs); } }
+  function resumableRecord(reelId) {
+    const rec = readRecords()[reelId];
+    return rec && Date.now() - rec.startedAt < RESUME_WINDOW_MS ? rec : null;
+  }
+  const sameFile = (rec, file) => rec.name === file.name && rec.size === file.size;
+
+  // Where Mux wants the next byte, from the Range header on its 308 reply (null if absent)
+  function nextByte(xhr) {
+    const m = /bytes=0-(\d+)/.exec(xhr.getResponseHeader("Range") || "");
+    return m ? Number(m[1]) + 1 : null;
+  }
+
+  // One chunk, with byte-by-byte progress so the bar moves smoothly. Resolves with where to continue.
   function putChunk(url, file, start, end, u) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       u.xhr = xhr;
       xhr.open("PUT", url);
+      xhr.timeout = CHUNK_TIMEOUT_MS;
       xhr.setRequestHeader("Content-Range", `bytes ${start}-${end - 1}/${file.size}`);
       xhr.upload.onprogress = (e) => { u.sent = Math.min(1, (start + e.loaded) / file.size); scheduleRender(); };
-      // 308 = chunk received, send the next one
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) || xhr.status === 308
-        ? resolve() : reject(new Error(`Upload failed (${xhr.status}).`));
+      xhr.onload = () => {
+        if (xhr.status === 200 || xhr.status === 201) return resolve(file.size);  // the whole file has arrived
+        if (xhr.status === 308) return resolve(nextByte(xhr) ?? end);             // chunk received: send the next one
+        const err = new Error(xhr.status === 404 || xhr.status === 410
+          ? "This upload expired. Pick the video again to start over." : `Upload failed (${xhr.status}).`);
+        err.fatal = xhr.status >= 400 && xhr.status < 500 && xhr.status !== 408 && xhr.status !== 429;
+        reject(err);
+      };
       xhr.onerror = () => reject(new Error("network"));
+      xhr.ontimeout = () => reject(new Error("timeout"));
       xhr.onabort = () => reject(new Error("cancelled"));
       xhr.send(file.slice(start, end));
     });
   }
 
-  // Sends the file to Mux in resumable chunks, retrying each chunk a few times.
-  async function uploadInChunks(url, file, u) {
-    let start = 0;
+  // Asks Mux how much of the file it already has
+  function queryOffset(url, size) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.timeout = 30000;
+      xhr.setRequestHeader("Content-Range", `bytes */${size}`);
+      xhr.onload = () => {
+        if (xhr.status === 200 || xhr.status === 201) return resolve(size);
+        if (xhr.status === 308) return resolve(nextByte(xhr) ?? 0);
+        const err = new Error("This upload expired. Pick the video again to start over.");
+        err.fatal = true;
+        reject(err);
+      };
+      xhr.onerror = xhr.ontimeout = () => reject(new Error("network"));
+      xhr.send();
+    });
+  }
+
+  // Sends the file to Mux in chunks from `start`. After a hiccup it asks Mux where to pick up,
+  // so nothing is skipped or sent twice.
+  async function uploadInChunks(url, file, u, start = 0) {
+    let failures = 0;
     while (start < file.size) {
-      const end = Math.min(start + CHUNK_BYTES, file.size);
-      for (let attempt = 1; ; attempt++) {
-        if (u.cancelled) throw new Error("cancelled");
-        try { await putChunk(url, file, start, end, u); break; }
-        catch (err) {
-          if (u.cancelled) throw err;
-          if (attempt >= 3) throw new Error("Upload failed. Check your connection and try again.");
-          u.sent = start / file.size;
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
-        }
+      if (u.cancelled) throw new Error("cancelled");
+      try {
+        start = await putChunk(url, file, start, Math.min(start + CHUNK_BYTES, file.size), u);
+        failures = 0;
+        saveRecord(u.reelId, { offset: start });
+      } catch (err) {
+        if (u.cancelled || err.fatal) throw err;
+        if (++failures > 5) throw new Error("Upload failed. Check your connection and try again.");
+        await new Promise((r) => setTimeout(r, 1000 * failures));
+        try { start = await queryOffset(url, file.size); } catch (e) { if (e.fatal) throw e; }
+        u.sent = start / file.size;
       }
-      start = end;
     }
   }
+
+  // Sends u.file (from byte startAt), then waits for Mux to process it
+  async function sendFile(u, url, startAt = 0) {
+    u.status = "uploading";
+    u.sent = startAt / u.file.size;
+    renderUploads();
+    if (page === "create") loadReels();
+    heartbeat();
+    try { await uploadInChunks(url, u.file, u, startAt); }
+    catch (err) {
+      if (!u.cancelled) failUpload(u, err.message);
+      return;
+    }
+    if (u.cancelled) return;
+    dropRecord(u.reelId);
+    u.uploaded = true;
+    u.sent = 1;
+    if (u.status === "uploading") u.status = "processing";
+    renderUploads();
+    watchUploads();
+  }
+
+  function heartbeat() {
+    const ids = [...uploads.values()].filter((u) => !u.cancelled && !u.uploaded && u.reelId).map((u) => u.reelId);
+    if (ids.length && currentUser) sb.rpc("upload_heartbeat", { p_ids: ids }).then(() => {}, () => {});
+  }
+  setInterval(heartbeat, HEARTBEAT_MS);
 
   function rejectPick(message) {
     $("video-file").value = "";
     setUploadMsg(message, "error");
   }
 
-  // Picking a video starts uploading it straight away
+  // If this video matches an upload that stopped earlier on this device, returns that reel's id
+  async function findResumable(file) {
+    const recs = readRecords();
+    const id = Object.keys(recs).find((k) => sameFile(recs[k], file) && resumableRecord(k) && !uploads.has(k));
+    if (!id) return null;
+    const { data } = await sb.rpc("tidy_my_uploads");
+    interruptedIds = new Set((data && data.interrupted) || []);
+    return interruptedIds.has(id) ? id : null;
+  }
+
+  // Picking a video starts uploading it straight away (or resumes it, if it was interrupted)
   async function pickVideo() {
     const file = $("video-file").files[0];
     if (!file) return;
@@ -1998,6 +2093,9 @@
     if (file.size === 0) return rejectPick("This file is empty.");
     if (file.size > MAX_MB * 1024 * 1024) return rejectPick(`Video must be under ${MAX_MB} MB.`);
     if (formUpload) discardUpload(formUpload); // a new pick replaces the unposted one
+
+    const earlier = await findResumable(file);
+    if (earlier) return resumeUpload(earlier, file);
 
     const u = { reelId: null, file, previewUrl: URL.createObjectURL(file), sent: 0, uploaded: false, posted: false,
                 status: "starting", xhr: null, cancelled: false, row: null };
@@ -2013,22 +2111,37 @@
     u.reelId = created.reel_id;
     if (u.cancelled) return removeReel(u.reelId); // discarded while we were setting up
     uploads.set(u.reelId, u);
-    u.status = "uploading";
-    renderUploads();
-    if (page === "create") loadReels();
+    saveRecord(u.reelId, { url: created.upload_url, name: file.name, size: file.size, offset: 0, startedAt: Date.now(), posted: false });
+    sendFile(u, created.upload_url, 0);
+  }
 
-    try {
-      await uploadInChunks(created.upload_url, file, u);
-    } catch (err) {
-      if (!u.cancelled) failUpload(u, err.message);
-      return;
-    }
-    if (u.cancelled) return;
-    u.uploaded = true;
-    u.sent = 1;
-    if (u.status === "uploading") u.status = "processing";
+  // Carry on an interrupted upload with the same video file
+  async function resumeUpload(reelId, file) {
+    const rec = resumableRecord(reelId);
+    if (!rec) return toast("This upload can't be resumed anymore. Remove it and upload the video again.", "error");
+    if (!sameFile(rec, file)) return toast(`That's a different video. Pick "${rec.name}" to resume.`, "error");
+
+    const u = { reelId, file, previewUrl: URL.createObjectURL(file), sent: (rec.offset || 0) / rec.size, uploaded: false,
+                posted: !!rec.posted, status: "starting", xhr: null, cancelled: false, row: null };
+    uploads.set(reelId, u);
+    interruptedIds.delete(reelId);
+    if (!u.posted && !formUpload) formUpload = u; // not posted yet: back into the Post form
     renderUploads();
-    watchUploads();
+    if (u === formUpload) setUploadMsg("Picking up where your upload stopped.", "ok");
+    else toast("Resuming your upload.", "ok");
+
+    let start;
+    try { start = await queryOffset(rec.url, rec.size); }
+    catch (err) {
+      if (err.fatal) return failUpload(u, "This upload can't be resumed anymore. Upload the video again.");
+      // Offline right now: leave it as interrupted so it can be resumed later
+      uploads.delete(reelId);
+      if (formUpload === u) { formUpload = null; setUploadMsg(""); }
+      renderUploads();
+      if (page === "create") loadReels();
+      return toast("Couldn't reach the upload server. Check your connection and try again.", "error");
+    }
+    if (!u.cancelled) sendFile(u, rec.url, start);
   }
 
   // Cancel the transfer and delete the reel row and Mux upload behind it
@@ -2036,7 +2149,7 @@
     if (!u || u.cancelled) return;
     u.cancelled = true;
     if (u.xhr) u.xhr.abort();
-    if (u.reelId) { uploads.delete(u.reelId); removeReel(u.reelId); }
+    if (u.reelId) { uploads.delete(u.reelId); dropRecord(u.reelId); removeReel(u.reelId); }
     if (u === formUpload) {
       formUpload = null;
       $("video-file").value = "";
@@ -2070,13 +2183,14 @@
       return setUploadMsg(error.message, "error");
     }
     u.posted = true;
+    if (readRecords()[u.reelId]) saveRecord(u.reelId, { posted: true });
     formUpload = null;
     $("video-file").value = "";
     $("caption").value = "";
     setUploadMsg("");
     if (status === "ready") announceLive(u);
     else {
-      toast("Posting your reel. Keep scrolling, we'll let you know when it's live.", "ok");
+      toast(u.uploaded ? "Posting your reel. We'll let you know when it's live." : "Posting your reel. Keep this tab open until it's live; you can keep scrolling.", "ok");
       watchUploads();
     }
     renderUploads();
@@ -2120,7 +2234,7 @@
 
   function formLabel(u) {
     if (u.status === "starting") return "Starting upload…";
-    if (u.status === "uploading") return `Uploading… ${pct(u)} · write your caption meanwhile`;
+    if (u.status === "uploading") return `Uploading… ${pct(u)} · keep this tab open`;
     if (u.status === "processing") return "Uploaded · finishing up…";
     return "Ready to post";
   }
@@ -2177,7 +2291,7 @@
       const u = active[0];
       pill.textContent = (u.status === "uploading" || u.status === "starting" ? `Posting… ${pct(u)}` : "Processing…")
         + (active.length > 1 ? ` +${active.length - 1}` : "");
-      pill.title = "Your reel is posting. You can keep using ReelMonkey.";
+      pill.title = "Your reel is posting. Keep this tab open; you can keep using ReelMonkey.";
       pill.dataset.mode = "posting";
       pill.classList.remove("hidden");
     } else if (pillLive && currentUser) {
@@ -2223,6 +2337,32 @@
     return tile;
   }
 
+  // Tile for an upload that stopped (tab closed). Resume needs the same video file again.
+  function interruptedTile(reel) {
+    const rec = resumableRecord(reel.id);
+    const tile = el("div", "thumb thumb-status interrupted");
+    tile.append(el("span", "", "Upload interrupted"));
+    tile.append(el("small", "", rec
+      ? `Stopped at ${Math.floor(((rec.offset || 0) / rec.size) * 100)}%. Pick "${rec.name}" to carry on.`
+      : "Upload the video again to post it."));
+    const actions = el("div", "tile-actions");
+    if (rec) {
+      const resume = el("button", "solid", "Resume");
+      resume.addEventListener("click", () => { resumeTarget = reel.id; $("resume-file").value = ""; $("resume-file").click(); });
+      actions.append(resume);
+    }
+    const remove = el("button", "ghost", "Remove");
+    remove.addEventListener("click", async () => {
+      dropRecord(reel.id);
+      interruptedIds.delete(reel.id);
+      try { await callFunction("mux-delete", { reel_id: reel.id }); } catch (err) { alert(err.message); }
+      loadReels();
+    });
+    actions.append(remove);
+    tile.append(actions);
+    return tile;
+  }
+
   // Tile for an upload happening in this tab: shows the video from the device with its progress
   function localTile(reel, u) {
     const tile = el("div", "thumb local");
@@ -2251,12 +2391,23 @@
 
   async function loadReels() {
     if (!currentUser) return;
+    // Fails uploads that stopped over an hour ago, and lists the ones that stopped recently
+    const tidy = await sb.rpc("tidy_my_uploads");
+    if (!tidy.error && tidy.data) interruptedIds = new Set(tidy.data.interrupted || []);
     const [{ data, error }, summary] = await Promise.all([
       sb.from("reels").select("*").eq("user_id", currentUser.id).order("created_at", { ascending: false }),
       sb.rpc("get_creator_summary")
     ]);
     if (error) return;
     myReels = data;
+    // Forget this device's records for uploads that finished, failed or were deleted elsewhere
+    const recs = readRecords();
+    let pruned = false;
+    Object.keys(recs).forEach((id) => {
+      const row = myReels.find((r) => r.id === id);
+      if (!uploads.has(id) && (!row || row.status !== "uploading" || Date.now() - recs[id].startedAt > 2 * 3600e3)) { delete recs[id]; pruned = true; }
+    });
+    if (pruned) writeRecords(recs);
     const stats = {};
     if (!summary.error && summary.data) {
       $("creator-total").textContent = money(summary.data.total);
@@ -2270,6 +2421,7 @@
     myReels.forEach((reel) => {
       const u = uploads.get(reel.id) || (formUpload && formUpload.reelId === reel.id ? formUpload : null);
       if (u && !u.cancelled && reel.status !== "ready" && reel.status !== "failed") return grid.appendChild(localTile(reel, u));
+      if (reel.status === "uploading" && interruptedIds.has(reel.id)) return grid.appendChild(interruptedTile(reel));
       if (reel.status === "draft") return grid.appendChild(draftTile(reel));
       if (reel.status !== "ready") return grid.appendChild(statusTile(reel));
       const btn = thumbButton(reel);
@@ -2285,7 +2437,7 @@
 
     // While anything is still uploading/processing, check back until it's ready
     clearTimeout(pendingTimer);
-    if (myReels.some((r) => r.status === "uploading" || r.status === "processing")) {
+    if (myReels.some((r) => (r.status === "uploading" && !interruptedIds.has(r.id)) || r.status === "processing")) {
       pendingTimer = setTimeout(() => { if (currentUser && page === "create") loadReels(); }, PENDING_POLL_MS);
     }
   }
@@ -2531,6 +2683,11 @@
   $("delete-account").addEventListener("click", deleteAccount);
   $("logout").addEventListener("click", async () => { await sb.auth.signOut(); });
   $("video-file").addEventListener("change", pickVideo);
+  $("resume-file").addEventListener("change", () => {
+    const file = $("resume-file").files[0];
+    if (file && resumeTarget) resumeUpload(resumeTarget, file);
+    resumeTarget = null;
+  });
   $("upload-btn").addEventListener("click", postReel);
   $("up-discard").addEventListener("click", () => { discardUpload(formUpload); setUploadMsg("Discarded."); });
   $("upload-pill").addEventListener("click", pillClicked);
