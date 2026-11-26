@@ -346,6 +346,8 @@
   .tp-note { color: var(--muted); font-size: .8rem; margin: .1rem 0 .7rem; }
   .tp-row { display: flex; gap: .45rem; align-items: center; margin-top: .5rem; }
   .tp-row button.buy, .tp-row button.sell { flex: 1; }
+  .tp-breakdown { font-size: .8rem; color: var(--muted); margin: -.3rem 0 .4rem; font-family: var(--mono); }
+  .tp-breakdown b { color: var(--ink); }
   .tp-held { font-size: .84rem; margin-top: .6rem; padding: .55rem .65rem; background: var(--bg); border-radius: 8px; }
   .tp-held b { font-family: var(--mono); }
   .tp-warn { font-size: .8rem; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: .45rem .6rem; margin-top: .6rem; }
@@ -603,7 +605,7 @@
       </div>
 
       <section class="panel section">
-        <div class="panel-head"><h3>Shares</h3><span class="hint">Worth more as the reel gets more likes</span></div>
+        <div class="panel-head"><h3>ReelMonkey Shares</h3><span class="hint">Gain when a reel beats a typical reel its age</span></div>
         <div class="panel-body">
           <div id="positions-wrap" class="table-wrap hidden">
             <table class="positions">
@@ -619,7 +621,7 @@
       </section>
 
       <section class="panel section">
-        <div class="panel-head"><h3>Open predictions</h3><span class="hint">Each contract pays $1 if you're right</span></div>
+        <div class="panel-head"><h3>ReelMonkey Bets</h3><span class="hint">Open bets · each contract pays $1 if you're right</span></div>
         <div class="panel-body">
           <div id="bets-wrap" class="table-wrap hidden">
             <table class="positions">
@@ -630,7 +632,7 @@
               <tbody id="bets-body"></tbody>
             </table>
           </div>
-          <p id="bets-empty" class="empty">No open predictions. Tap Trade on any reel to make one.</p>
+          <p id="bets-empty" class="empty">No open bets. Tap Trade on any reel to place one.</p>
         </div>
       </section>
 
@@ -638,7 +640,7 @@
         <div class="panel-head"><h3>Recent results</h3></div>
         <div class="panel-body">
           <ul id="results-list" class="results"></ul>
-          <p id="results-empty" class="empty">Settled predictions will show up here.</p>
+          <p id="results-empty" class="empty">Settled bets will show up here.</p>
         </div>
       </section>
     </section>
@@ -692,7 +694,7 @@
       <div class="topbar">
         <div>
           <h2>Leaderboard</h2>
-          <p class="page-sub" id="lb-sub">Top 100 by profit from closed trades and settled predictions.</p>
+          <p class="page-sub" id="lb-sub">Top 100 by profit from sold shares and settled bets.</p>
         </div>
         <div class="tabs" role="tablist" aria-label="Board">
           <button class="tab" role="tab" data-board="traders" aria-selected="true">Traders</button>
@@ -1232,7 +1234,7 @@
   // Why this account can't vote on a reel right now, if it can't
   function voteLock(reel) {
     if (Number(reel.my_shares) > 0) return "You can't vote on a reel you own shares in. Sell your shares first.";
-    if (Number(reel.my_predictions) > 0) return "You can't vote on a reel you have an open prediction on. Sell it first or wait for it to resolve.";
+    if (Number(reel.my_predictions) > 0) return "You can't vote on a reel you have an open bet on. Sell it first or wait for it to resolve.";
     return null;
   }
 
@@ -1550,9 +1552,14 @@
 
   function renderShares(d) {
     const sec = el("section", "tp-section");
-    const h = el("h4", "", "Shares");
+    const h = el("h4", "", "ReelMonkey Shares");
     h.append(el("span", "price", d.likes > 0 ? sharePrice(d.share_price) : "—"));
-    sec.append(h, el("p", "tp-note", "Price rises and falls with the reel's likes. Hold as long as you like."));
+    sec.append(h, el("p", "tp-note", "Like a stock in the reel. The price is its popularity minus the growth a typical reel its age would have, so it rises when the reel beats expectations and slips when it falls behind. Hold as long as you like."));
+    if (d.likes > 0 && Number(d.share_adjustment) > 0.00005) {
+      const parts = el("div", "tp-breakdown");
+      parts.append(`Popularity ${sharePrice(d.share_popularity)} − expected growth ${sharePrice(d.share_adjustment)} = `, el("b", "", sharePrice(d.share_price)));
+      sec.append(parts);
+    }
 
     const shares = Number(d.my_shares);
     if (shares > 0) {
@@ -1566,7 +1573,8 @@
     if (d.is_mine) return sec;
 
     const reason = d.my_vote != null ? "You can't invest in a reel you've liked or disliked. Remove your vote first."
-      : d.likes <= 0 ? "Reels need at least 1 like before you can buy shares." : null;
+      : d.likes <= 0 ? "Reels need at least 1 like before you can buy shares."
+      : Number(d.share_price) < 0.01 ? "This reel's shares are worth $0 right now: it has fallen far behind a typical reel its age." : null;
     const buyRow = el("div", "tp-row");
     const qty = qtyInput("buy:" + d.reel_id, 1, "Shares to buy");
     const buyBtn = el("button", "buy");
@@ -1602,8 +1610,8 @@
 
   function renderPredictions(d) {
     const sec = el("section", "tp-section");
-    sec.append(el("h4", "", "Predictions"),
-      el("p", "tp-note", "Will this reel reach the like count by the time limit after it was posted? Each contract pays $1 if you're right."));
+    sec.append(el("h4", "", "ReelMonkey Bets"),
+      el("p", "tp-note", "Like options on the reel: will it reach each like target within the time limit after it was posted? Each contract pays $1 if you're right."));
 
     // Rows: like targets. Columns: time limits. Built from the data so new specs just appear.
     const targets = [...new Set(d.markets.map((m) => m.target_likes))].sort((a, b) => a - b);
@@ -2530,7 +2538,7 @@
     const creators = lbBoard === "creators";
     $("lb-sub").textContent = creators
       ? "Top 100 creators by what they've earned from people trading their reels."
-      : "Top 100 by profit from closed trades and settled predictions.";
+      : "Top 100 by profit from sold shares and settled bets.";
     const req = ++lbRequest;
     const { data, error } = await sb.rpc(creators ? "get_creator_leaderboard" : "get_leaderboard", { p_period: lbPeriod });
     if (req !== lbRequest) return;
