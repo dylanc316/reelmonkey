@@ -605,7 +605,7 @@
       </div>
 
       <section class="panel section">
-        <div class="panel-head"><h3>ReelMonkey Shares</h3><span class="hint">Gain when a reel beats a typical reel its age</span></div>
+        <div class="panel-head"><h3>ReelMonkey Shares</h3><span class="hint">$1 = as many likes as a typical reel its age</span></div>
         <div class="panel-body">
           <div id="positions-wrap" class="table-wrap hidden">
             <table class="positions">
@@ -1553,13 +1553,12 @@
   function renderShares(d) {
     const sec = el("section", "tp-section");
     const h = el("h4", "", "ReelMonkey Shares");
-    h.append(el("span", "price", d.likes > 0 ? sharePrice(d.share_price) : "—"));
-    sec.append(h, el("p", "tp-note", "Like a stock in the reel. The price is its popularity minus the growth a typical reel its age would have, so it rises when the reel beats expectations and slips when it falls behind. Hold as long as you like."));
-    if (d.likes > 0 && Number(d.share_adjustment) > 0.00005) {
-      const parts = el("div", "tp-breakdown");
-      parts.append(`Popularity ${sharePrice(d.share_popularity)} − expected growth ${sharePrice(d.share_adjustment)} = `, el("b", "", sharePrice(d.share_price)));
-      sec.append(parts);
-    }
+    h.append(el("span", "price", sharePrice(d.share_price)));
+    sec.append(h, el("p", "tp-note", "Like a stock in the reel. It's worth $1 when the reel has as many likes as a typical reel its age, +$1 for every 10× more, and −$1 for every 10× fewer. Hold as long as you like."));
+    const parts = el("div", "tp-breakdown");
+    parts.append("This reel ", el("b", "", plural(Math.max(0, Number(d.likes)), "like")),
+      ` · typical reel its age ${Number(d.typical_likes).toLocaleString("en-US", { maximumFractionDigits: 1 })}`);
+    sec.append(parts);
 
     const shares = Number(d.my_shares);
     if (shares > 0) {
@@ -1573,8 +1572,7 @@
     if (d.is_mine) return sec;
 
     const reason = d.my_vote != null ? "You can't invest in a reel you've liked or disliked. Remove your vote first."
-      : d.likes <= 0 ? "Reels need at least 1 like before you can buy shares."
-      : Number(d.share_price) < 0.01 ? "This reel's shares are worth $0 right now: it has fallen far behind a typical reel its age." : null;
+      : Number(d.share_price) < 0.01 ? "This reel's shares are worth $0 right now: it has far fewer likes than a typical reel its age." : null;
     const buyRow = el("div", "tp-row");
     const qty = qtyInput("buy:" + d.reel_id, 1, "Shares to buy");
     const buyBtn = el("button", "buy");
