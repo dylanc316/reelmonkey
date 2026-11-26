@@ -1554,7 +1554,7 @@
     const sec = el("section", "tp-section");
     const h = el("h4", "", "ReelMonkey Shares");
     h.append(el("span", "price", sharePrice(d.share_price)));
-    sec.append(h, el("p", "tp-note", "Like a stock in the reel. It's worth $1 when the reel has as many likes as a typical reel its age, +$1 for every 10× more, and −$1 for every 10× fewer. Hold as long as you like."));
+    sec.append(h, el("p", "tp-note", "Like a stock in the reel. It's worth $1 when the reel has as many likes as a typical reel its age, and gains or loses $1 for every 10× more or fewer. Likes are counted on top of a base of 10, so a reel's first few likes don't swing the price. Hold as long as you like."));
     const parts = el("div", "tp-breakdown");
     parts.append("This reel ", el("b", "", plural(Math.max(0, Number(d.likes)), "like")),
       ` · typical reel its age ${Number(d.typical_likes).toLocaleString("en-US", { maximumFractionDigits: 1 })}`);
