@@ -913,7 +913,11 @@
     params.delete("page");
     params.delete("reel");
     if (name !== "discover") params.set("page", name);
-    else if (slides[activeSlide]) params.set("reel", slides[activeSlide].id);
+    else if (slides[activeSlide]) {
+      // On a message card, keep the reel above it, so a reload comes back to just before the card
+      const id = lastReelId(activeSlide);
+      if (id) params.set("reel", id);
+    }
     const q = params.toString();
     // Some embedded previews (e.g. about:srcdoc) don't allow changing the URL; the page works without it
     try { history.replaceState(null, "", window.location.pathname + (q ? "?" + q : "") + window.location.hash); } catch {}
@@ -1121,17 +1125,36 @@
 
   // =====================================================================
   // Discover feed
-  // An endless vertical feed that snaps one reel at a time. Each new reel is
-  // picked at random by the database, never the same as the one before it.
+  // An endless vertical feed that snaps one reel at a time. The database hands
+  // out reels in cycles: every reel once, in random order, before any reel
+  // twice, then reshuffled (see feed_next in sql/feed-cycles.sql). The first
+  // time this browser finishes a cycle, the feed shows "You're all caught up".
+  // Progress is kept per browser, so reloading picks up where you left off.
   // Only the reel on screen (and the next one, preloading) has video attached.
   // =====================================================================
   const feed = $("feed");
   const feedReels = {};   // reel id -> latest data (likes, my_vote, ...), shared by repeated slides
-  const slides = [];      // { el, id, video, frame, rail, hls }
+  const slides = [];      // reels: { el, id, cycle, video, frame, rail, hls, seen }; cards: { el, id: null, card: true }
   let activeSlide = -1;
   let feedLoading = false;
   let feedEnded = false;
   let feedStarted = false;
+  let feedCycle = null;   // the cycle of the newest reel in the feed
+
+  // Feed progress belongs to this browser (signed in or not), under a random id kept in
+  // localStorage; it's never tied to an account. The session id is new on every load,
+  // so reels fetched ahead but never shown are handed out again after a reload.
+  const newId = () => (crypto.randomUUID ? crypto.randomUUID()
+    : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+  const FEED_DEVICE_KEY = "reelmonkey-feed-device";
+  const feedDevice = (() => {
+    try {
+      let id = localStorage.getItem(FEED_DEVICE_KEY);
+      if (!/^[0-9a-f-]{36}$/i.test(id || "")) { id = newId(); localStorage.setItem(FEED_DEVICE_KEY, id); }
+      return id;
+    } catch { return newId(); } // storage blocked: progress lasts for this page only
+  })();
+  const feedSession = newId();
   let soundOn = false;    // browsers only autoplay muted; one tap on the speaker turns sound on for the session
 
   const ICONS = {
@@ -1142,6 +1165,15 @@
     share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v14"/></svg>',
     flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>'
   };
+
+  // Message cards sit in the feed like reels, so scrolling, the arrows and the keyboard stop on them
+  function addCard(title, text, buttonText, onClick) {
+    const node = feedCard(title, text, buttonText, onClick);
+    node.dataset.index = String(slides.length);
+    slides.push({ el: node, id: null, card: true });
+    feed.append(node);
+    slideObserver.observe(node);
+  }
 
   function feedCard(title, text, buttonText, onClick) {
     const slide = el("section", "slide");
@@ -1163,8 +1195,10 @@
 
   function addSlides(rows) {
     rows.forEach((row) => {
-      feedReels[row.id] = { ...(feedReels[row.id] || {}), ...row };
+      const { cycle, ...data } = row;
+      feedReels[row.id] = { ...(feedReels[row.id] || {}), ...data };
       const slide = buildSlide(row.id);
+      slide.cycle = cycle ?? null;
       slides.push(slide);
       feed.append(slide.el);
       slideObserver.observe(slide.el);
@@ -1214,7 +1248,7 @@
     const rail = el("div", "rail");
     node.append(frame, rail);
 
-    const slide = { el: node, id, video, frame, rail, sound, hls: null, attached: false };
+    const slide = { el: node, id, video, frame, rail, sound, hls: null, attached: false, seen: false };
     renderSound(slide);
     renderRail(slide);
     return slide;
@@ -1263,8 +1297,8 @@
     }
     slide.rail.replaceChildren(...nodes);
   }
-  function renderRailsFor(id) { slides.forEach((s) => { if (s.id === id) renderRail(s); }); }
-  function renderAllRails() { slides.forEach(renderRail); }
+  function renderRailsFor(id) { slides.forEach((s) => { if (!s.card && s.id === id) renderRail(s); }); }
+  function renderAllRails() { slides.forEach((s) => { if (!s.card) renderRail(s); }); }
 
   function renderSound(slide) {
     slide.sound.replaceChildren(svg(soundOn ? ICONS.sound : ICONS.muted));
@@ -1272,9 +1306,9 @@
   }
   function setSound(on) {
     soundOn = on;
-    slides.forEach((s) => { s.video.muted = !on; renderSound(s); });
+    slides.forEach((s) => { if (!s.card) { s.video.muted = !on; renderSound(s); } });
     const s = slides[activeSlide];
-    if (s && on && s.video.paused) playVideo(s.video);
+    if (s && !s.card && on && s.video.paused) playVideo(s.video);
   }
 
   function playVideo(video) {
@@ -1313,17 +1347,31 @@
     if (index === activeSlide) return;
     activeSlide = index;
     slides.forEach((s, i) => {
+      if (s.card) return;
       if (Math.abs(i - index) <= 1) attach(s); else detach(s);
       if (i !== index) s.video.pause();
     });
     const s = slides[index];
     if (!s) return;
-    s.video.currentTime = 0;
-    if (screen === "app" && page === "discover" && !document.hidden) playVideo(s.video);
+    let seen = Promise.resolve();
+    if (!s.card) {
+      s.video.currentTime = 0;
+      if (screen === "app" && page === "discover" && !document.hidden) playVideo(s.video);
+      seen = markSeen(s);
+    }
     // Keep the address bar on the current reel so refreshing or copying the link brings it back
     if (page === "discover") setPageUrl("discover");
-    if (trade.open && trade.follow && trade.reelId !== s.id) openTrade(s.id, { follow: true });
-    if (index >= slides.length - 3) loadMoreReels();
+    if (!s.card && trade.open && trade.follow && trade.reelId !== s.id) openTrade(s.id, { follow: true });
+    // Ask for more only once this view is recorded, so the database knows what's left
+    if (index >= slides.length - 3) seen.then(loadMoreReels);
+  }
+
+  // Tell the database this reel has been on screen, so it isn't handed out again this cycle
+  function markSeen(slide) {
+    if (slide.seen || !sb) return Promise.resolve();
+    slide.seen = true;
+    return sb.rpc("feed_mark_seen", { p_device: feedDevice, p_session: feedSession, p_reel_id: slide.id })
+      .then(({ error }) => { if (error) slide.seen = false; }, () => { slide.seen = false; });
   }
 
   // A slide counts as "on screen" once 60% of it is visible
@@ -1336,20 +1384,39 @@
     });
   }, { root: feed, threshold: [0.6] });
 
+  function lastReelId(upTo = slides.length - 1) {
+    for (let i = Math.min(upTo, slides.length - 1); i >= 0; i--) if (!slides[i].card) return slides[i].id;
+    return null;
+  }
+
   async function loadMoreReels() {
     if (!sb || feedLoading || feedEnded) return;
     feedLoading = true;
-    const last = slides[slides.length - 1];
-    const { data, error } = await sb.rpc("discover_reels", { p_prev: last ? last.id : null, p_count: 4 });
+    const { data, error } = await sb.rpc("feed_next", {
+      p_device: feedDevice, p_session: feedSession, p_last: lastReelId(), p_count: 4
+    });
     feedLoading = false;
     if (error) return toast("Couldn't load more reels. Check your connection.", "error");
-    if (data.length) return addSlides(data);
+
+    if (feedCycle === null) feedCycle = data.cycle;
+    for (const row of data.reels) {
+      // The first reel of cycle 2: this browser has now seen everything once. Later cycles
+      // just carry on without a card.
+      if (row.cycle > feedCycle) {
+        if (feedCycle === 1) addCard("You're all caught up",
+          `You've seen all ${plural(data.total, "reel")} on ReelMonkey. Keep scrolling to watch them again in a new order, or post one of your own.`,
+          "Upload a reel", uploadCta);
+        feedCycle = row.cycle;
+      }
+      addSlides([row]);
+    }
+    if (data.reels.length || data.total > 1) return; // with 2+ reels an empty answer just means "the rest are already queued"
 
     feedEnded = true;
     if (!slides.length) {
-      feed.append(feedCard("No reels yet", "Be the first to post one. Every reel gets its own market.", "Upload a reel", uploadCta));
+      addCard("No reels yet", "Be the first to post one. Every reel gets its own market.", "Upload a reel", uploadCta);
     } else {
-      feed.append(feedCard("You've seen every reel", "There's only one reel on ReelMonkey so far. Post another to keep the feed going.", "Upload a reel", uploadCta));
+      addCard("You've seen every reel", "There's only one reel on ReelMonkey so far. Post another to keep the feed going.", "Upload a reel", uploadCta);
     }
   }
 
@@ -1358,15 +1425,18 @@
     feedStarted = true;
     if (sharedReel && /^[0-9a-f-]{36}$/i.test(sharedReel)) {
       const { data } = await sb.rpc("get_reels_public", { p_ids: [sharedReel] });
-      if (data && data.length) addSlides(data);
-      else toast("That reel isn't available anymore.", "error");
+      if (data && data.length) {
+        addSlides(data);
+        // Count it before asking for more, so it doesn't come round again this cycle
+        await markSeen(slides[slides.length - 1]);
+      } else toast("That reel isn't available anymore.", "error");
     }
     await loadMoreReels();
   }
 
   // After signing in or out, re-read votes and holdings for reels already in the feed
   async function refreshFeedState() {
-    const ids = [...new Set(slides.map((s) => s.id))];
+    const ids = [...new Set(slides.filter((s) => !s.card).map((s) => s.id))];
     if (!ids.length) return;
     // Most recent first, so what's on screen is always included
     const recent = ids.slice(-50);
@@ -1376,10 +1446,10 @@
     renderAllRails();
   }
 
-  function pauseFeed() { slides.forEach((s) => s.video.pause()); }
+  function pauseFeed() { slides.forEach((s) => { if (!s.card) s.video.pause(); }); }
   function resumeFeed() {
     const s = slides[activeSlide];
-    if (s && screen === "app" && !document.hidden) playVideo(s.video);
+    if (s && !s.card && screen === "app" && !document.hidden) playVideo(s.video);
   }
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) pauseFeed(); else if (page === "discover") resumeFeed();
@@ -1402,7 +1472,7 @@
     else if (e.key === " " && t === document.body) {
       e.preventDefault();
       const s = slides[activeSlide];
-      if (s) { if (s.video.paused) playVideo(s.video); else s.video.pause(); }
+      if (s && !s.card) { if (s.video.paused) playVideo(s.video); else s.video.pause(); }
     }
   });
 
