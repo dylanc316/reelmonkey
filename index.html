@@ -656,7 +656,7 @@
           <div class="stat"><div class="stat-label">Creator earnings</div><div class="stat-value gain" id="creator-total">$0.00</div></div>
         </div>
       </div>
-      <p class="explainer" id="creator-explainer">Every time someone makes a profit on one of your reels, whether by selling shares or winning a prediction, you earn 10% of that profit on top. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.</p>
+      <p class="explainer" id="creator-explainer">When people profit from your reel doing well, by selling its shares at a gain or winning YES bets on it, you earn an extra 10% of their profit. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.</p>
 
       <div class="layout">
         <section class="panel upload">
@@ -1539,14 +1539,14 @@
     if (d.is_mine) {
       const card = el("section", "tp-section creator-card");
       card.append(el("h4", "", "This is your reel"),
-        el("p", "tp-note", `You can't trade your own reel, but you earn ${rate}% of the profit every trader makes on it, from shares and predictions.`),
+        el("p", "tp-note", `You can't trade your own reel, but when people profit from it doing well (selling shares at a gain or winning YES bets), you earn an extra ${rate}% of their profit.`),
         el("div", "big", money(d.my_royalties || 0)),
         el("p", "tp-note", "earned from this reel so far"));
       body.push(card);
     }
 
     body.push(renderShares(d), renderPredictions(d));
-    if (!d.is_mine) body.push(el("p", "tp-foot", `When you profit on this reel, its creator earns an extra ${rate}%. It's paid by ReelMonkey and never comes out of your winnings.`));
+    if (!d.is_mine) body.push(el("p", "tp-foot", `When you profit from shares or YES bets on this reel, its creator earns an extra ${rate}%. It's paid by ReelMonkey and never comes out of your winnings.`));
     $("tp-body").replaceChildren(...body);
   }
 
@@ -2344,7 +2344,7 @@
     if (!summary.error && summary.data) {
       $("creator-total").textContent = money(summary.data.total);
       const rate = Math.round(Number(summary.data.royalty_rate) * 100);
-      $("creator-explainer").textContent = `Every time someone makes a profit on one of your reels, whether by selling shares or winning a prediction, you earn ${rate}% of that profit on top. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.`;
+      $("creator-explainer").textContent = `When people profit from your reel doing well, by selling its shares at a gain or winning YES bets on it, you earn an extra ${rate}% of their profit. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.`;
       summary.data.reels.forEach((r) => { stats[r.reel_id] = r; });
     }
 
