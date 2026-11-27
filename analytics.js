@@ -8,7 +8,7 @@
 // Web Analytics on "automatic setup", Cloudflare adds the snippet itself: leave this
 // blank, or the visit would be counted twice.
 (function () {
-  var TOKEN = "YOUR_CF_ANALYTICS_TOKEN";
+  var TOKEN = "cbcdd5601bfa4775879a39346c797cbe";
   if (!TOKEN || TOKEN.indexOf("YOUR_") === 0) return;
   var s = document.createElement("script");
   s.type = "module";
