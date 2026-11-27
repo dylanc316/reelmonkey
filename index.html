@@ -617,17 +617,17 @@
       <div class="topbar">
         <div>
           <h2 id="welcome">Portfolio</h2>
-          <p class="page-sub">Your shares and predictions. Open a reel's Trade panel to buy more.</p>
+          <p class="page-sub">Your shares and bets. Open a reel's Trade panel to buy more.</p>
         </div>
         <div class="stat-row">
           <div class="stat"><div class="stat-label">Balance</div><div class="stat-value" id="balance">$0.00</div><button id="daily-cash" class="cash-btn" disabled>+ Add $500</button></div>
           <div class="stat"><div class="stat-label">Shares</div><div class="stat-value" id="holdings">$0.00</div></div>
-          <div class="stat"><div class="stat-label">Predictions</div><div class="stat-value" id="bet-holdings">$0.00</div></div>
+          <div class="stat"><div class="stat-label">Bets</div><div class="stat-value" id="bet-holdings">$0.00</div></div>
         </div>
       </div>
 
       <section class="panel section">
-        <div class="panel-head"><h3>ReelMonkey Shares</h3><span class="hint">$1 = as many likes as a typical reel its age</span></div>
+        <div class="panel-head"><h3>ReelMonkey Shares</h3><span class="hint">$1 = the usual likes for a reel its age</span></div>
         <div class="panel-body">
           <div id="positions-wrap" class="table-wrap hidden">
             <table class="positions">
@@ -678,7 +678,7 @@
           <div class="stat"><div class="stat-label">Creator earnings</div><div class="stat-value gain" id="creator-total">$0.00</div></div>
         </div>
       </div>
-      <p class="explainer" id="creator-explainer">When people profit from your reel doing well, by selling its shares at a gain or winning YES bets on it, you earn an extra 10% of their profit. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.</p>
+      <p class="explainer" id="creator-explainer">When people profit on your reel, you get 10% on top, paid by ReelMonkey. You can't lose money on your own reels.</p>
 
       <div class="layout">
         <section class="panel upload">
@@ -716,7 +716,7 @@
       <div class="topbar">
         <div>
           <h2>Leaderboard</h2>
-          <p class="page-sub" id="lb-sub">Top 100 by profit from sold shares and settled bets.</p>
+          <p class="page-sub" id="lb-sub">Top 100 traders by profit.</p>
         </div>
         <div class="tabs" role="tablist" aria-label="Board">
           <button class="tab" role="tab" data-board="traders" aria-selected="true">Traders</button>
@@ -1151,9 +1151,9 @@
     if (captchaWidget !== null && window.turnstile) window.turnstile.reset(captchaWidget);
   }
 
-  const CAPTCHA_FAILED = "We couldn't confirm you're a person. Complete the check above, or reload the page and try again.";
+  const CAPTCHA_FAILED = "Please complete the check above and try again.";
   const USERNAME_TAKEN = "That username is taken. Try another.";
-  const INBOX_TAKEN = "An account already exists for this email inbox. Versions of an address with a +tag, or Gmail addresses with dots added or removed, count as the same inbox. Log in instead.";
+  const INBOX_TAKEN = "There's already an account for this email. Log in instead.";
 
   // true / false, or null if it couldn't be checked
   async function usernameAvailable(username) {
@@ -1568,7 +1568,7 @@
       // just carry on without a card.
       if (row.cycle > feedCycle) {
         if (feedCycle === 1) addCard("You're all caught up",
-          `You've seen all ${plural(data.total, "reel")} on ReelMonkey. Keep scrolling to watch them again in a new order, or post one of your own.`,
+          "Keep scrolling to watch them again, or post your own.",
           "Upload a reel", uploadCta);
         feedCycle = row.cycle;
       }
@@ -1773,14 +1773,14 @@
     if (d.is_mine) {
       const card = el("section", "tp-section creator-card");
       card.append(el("h4", "", "This is your reel"),
-        el("p", "tp-note", `You can't trade your own reel, but when people profit from it doing well (selling shares at a gain or winning YES bets), you earn an extra ${rate}% of their profit.`),
+        el("p", "tp-note", `You can't trade your own reel, but you earn ${rate}% of what others make when they profit on it.`),
         el("div", "big", money(d.my_royalties || 0)),
         el("p", "tp-note", "earned from this reel so far"));
       body.push(card);
     }
 
     body.push(renderShares(d), renderPredictions(d));
-    if (!d.is_mine) body.push(el("p", "tp-foot", `When you profit from shares or YES bets on this reel, its creator earns an extra ${rate}%. It's paid by ReelMonkey and never comes out of your winnings.`));
+    if (!d.is_mine) body.push(el("p", "tp-foot", `When you profit on this reel, its creator gets a ${rate}% bonus from ReelMonkey. It doesn't come out of your winnings.`));
     $("tp-body").replaceChildren(...body);
   }
 
@@ -1788,10 +1788,10 @@
     const sec = el("section", "tp-section");
     const h = el("h4", "", "ReelMonkey Shares");
     h.append(el("span", "price", sharePrice(d.share_price)));
-    sec.append(h, el("p", "tp-note", "Like a stock in the reel. It's worth $1 when the reel has as many likes as a typical reel its age, and gains or loses $1 for every 10× more or fewer. Likes are counted on top of a base of 10, so a reel's first few likes don't swing the price. Hold as long as you like."));
+    sec.append(h, el("p", "tp-note", "Shares go up when a reel gets more likes than usual for its age, and down when it gets fewer. Sell any time."));
     const parts = el("div", "tp-breakdown");
     parts.append("This reel ", el("b", "", plural(Math.max(0, Number(d.likes)), "like")),
-      ` · typical reel its age ${Number(d.typical_likes).toLocaleString("en-US", { maximumFractionDigits: 1 })}`);
+      ` · usual for its age ${Number(d.typical_likes).toLocaleString("en-US", { maximumFractionDigits: 1 })}`);
     sec.append(parts);
 
     const shares = Number(d.my_shares);
@@ -1806,7 +1806,7 @@
     if (d.is_mine) return sec;
 
     const reason = d.my_vote != null ? "You can't invest in a reel you've liked or disliked. Remove your vote first."
-      : Number(d.share_price) < 0.01 ? "This reel's shares are worth $0 right now: it has far fewer likes than a typical reel its age." : null;
+      : Number(d.share_price) < 0.01 ? "This reel's shares are worth $0 right now because it has far fewer likes than usual for its age." : null;
     const buyRow = el("div", "tp-row");
     const qty = qtyInput("buy:" + d.reel_id, 1, "Shares to buy");
     const buyBtn = el("button", "buy");
@@ -1843,7 +1843,7 @@
   function renderPredictions(d) {
     const sec = el("section", "tp-section");
     sec.append(el("h4", "", "ReelMonkey Bets"),
-      el("p", "tp-note", "Like options on the reel: will it reach each like target within the time limit after it was posted? Each contract pays $1 if you're right."));
+      el("p", "tp-note", "Will this reel hit a like target in time? Bet YES or NO. Each contract pays $1 if you're right."));
 
     // Rows: like targets. Columns: time limits. Built from the data so new specs just appear.
     const targets = [...new Set(d.markets.map((m) => m.target_likes))].sort((a, b) => a - b);
@@ -1896,8 +1896,8 @@
     slip.append(el("div", "slip-q", `Reach ${Number(m.target_likes).toLocaleString("en-US")} likes within ${m.duration_label} of posting?`));
     const left = new Date(m.deadline).getTime() - (Date.now() + trade.offset);
     slip.append(el("div", "slip-when", m.status === "open"
-      ? `Closes ${shortDate(m.deadline)} · ${timeLeft(left)} left · now at ${Number(d.likes).toLocaleString("en-US")}`
-      : m.status === "yes" ? "Resolved YES: the reel hit the target in time." : "Resolved NO: time ran out before the reel hit the target."));
+      ? `Closes ${shortDate(m.deadline)} · ${timeLeft(left)} left · ${plural(Math.max(0, Number(d.likes)), "like")} so far`
+      : m.status === "yes" ? "YES won: it hit the target in time." : "NO won: it missed the target."));
     if (m.status !== "open") return slip;
 
     const b = Number(d.liquidity);
@@ -2382,7 +2382,7 @@
       const u = uploads.get(row.id);
       if (!u || u.cancelled) return;
       u.row = row;
-      if (row.status === "failed") failUpload(u, row.failure_reason ? "Processing failed: " + row.failure_reason : "Mux couldn't process that video. Try another file.");
+      if (row.status === "failed") failUpload(u, row.failure_reason ? "Processing failed: " + row.failure_reason : "We couldn't process that video. Try another file.");
       else if (row.status === "ready") announceLive(u);
       else if (row.status === "draft") u.status = "draft"; // processed; waiting for the creator to press Post
     });
@@ -2578,7 +2578,7 @@
     if (!summary.error && summary.data) {
       $("creator-total").textContent = money(summary.data.total);
       const rate = Math.round(Number(summary.data.royalty_rate) * 100);
-      $("creator-explainer").textContent = `When people profit from your reel doing well, by selling its shares at a gain or winning YES bets on it, you earn an extra ${rate}% of their profit. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.`;
+      $("creator-explainer").textContent = `When people profit on your reel, you get ${rate}% on top, paid by ReelMonkey. You can't lose money on your own reels.`;
       summary.data.reels.forEach((r) => { stats[r.reel_id] = r; });
     }
 
@@ -2669,7 +2669,7 @@
 
   async function deleteReel() {
     if (!openReel) return;
-    if (!confirm("Delete this reel permanently? This can't be undone. Shareholders are cashed out and open predictions are refunded.")) return;
+    if (!confirm("Delete this reel permanently? This can't be undone. Anyone holding shares is paid out at today's price, and open bets are refunded.")) return;
     const reel = openReel;
     // The Edge Function deletes the reel (the database cashes out holders and refunds bets) and its video on Mux
     try { await callFunction("mux-delete", { reel_id: reel.id }); }
@@ -2769,8 +2769,8 @@
       t.setAttribute("aria-selected", String(t.dataset.board === lbBoard)));
     const creators = lbBoard === "creators";
     $("lb-sub").textContent = creators
-      ? "Top 100 creators by what they've earned from people trading their reels."
-      : "Top 100 by profit from sold shares and settled bets.";
+      ? "Top 100 creators by bonus earned."
+      : "Top 100 traders by profit.";
     const req = ++lbRequest;
     const { data, error } = await sb.rpc(creators ? "get_creator_leaderboard" : "get_leaderboard", { p_period: lbPeriod });
     if (req !== lbRequest) return;
@@ -2800,7 +2800,7 @@
   // ---------- Account deletion ----------
   async function deleteAccount() {
     const username = profile ? profile.username : "";
-    const typed = prompt(`This permanently deletes your account, your reels, your shares, your predictions and your balance. It can't be undone.\n\nType your username (${username}) to confirm.`);
+    const typed = prompt(`This permanently deletes your account, your reels, your shares, your bets and your balance. It can't be undone.\n\nType your username (${username}) to confirm.`);
     if (typed === null) return;
     if (typed.trim() !== username) return alert("That didn't match your username. Your account was not deleted.");
 
