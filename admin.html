@@ -61,6 +61,22 @@
   th { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 500; }
   .mono { font-family: var(--mono); font-size: .8rem; }
   .hidden { display: none !important; }
+  .search { display: flex; gap: .5rem; margin-bottom: .75rem; }
+  .search input { flex: 1; font: inherit; font-size: .9rem; padding: .5rem .75rem; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
+  .search input:focus, #ban-reason:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  .list-title { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 1rem 0 .6rem; }
+  .acct .head { margin-bottom: .35rem; }
+  .acct .actions { margin-top: .75rem; }
+  .pill.ok { color: var(--ok); border-color: #bfe3cb; background: #f2fbf5; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; width: min(92vw, 440px); box-shadow: 0 24px 64px rgba(11,13,18,.3); }
+  dialog::backdrop { background: rgba(11,13,18,.55); }
+  dialog h2 { font-size: 1.15rem; margin: 0 0 .9rem; letter-spacing: -.01em; }
+  dialog label { display: block; font-size: .85rem; font-weight: 500; margin-bottom: .35rem; }
+  #ban-reason { width: 100%; font: inherit; font-size: .9rem; padding: .55rem .7rem; border: 1px solid var(--line-strong); border-radius: 8px; resize: vertical; min-height: 4.5rem; }
+  .hint { font-size: .8rem; color: var(--muted); margin: .3rem 0 0; }
+  .check { display: flex; gap: .55rem; align-items: flex-start; margin-top: 1rem; font-weight: 400 !important; cursor: pointer; }
+  .check input { margin-top: .2rem; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.2rem; }
   @media (max-width: 600px) { .body { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -71,7 +87,7 @@
 </div></header>
 
 <main>
-  <h1>Reports</h1>
+  <h1>Moderation</h1>
   <div id="gate" class="msg">Loading…</div>
 
   <div id="app" class="hidden">
@@ -79,10 +95,29 @@
       <button class="tab" data-tab="open" aria-selected="true">Open</button>
       <button class="tab" data-tab="all" aria-selected="false">All reports</button>
       <button class="tab" data-tab="preserved" aria-selected="false">Preserved videos</button>
+      <button class="tab" data-tab="accounts" aria-selected="false">Accounts</button>
     </div>
+    <form id="search" class="search hidden">
+      <input id="search-q" type="search" placeholder="Find an account by username, email or account ID" autocomplete="off">
+      <button class="dark">Search</button>
+    </form>
     <div id="list"></div>
   </div>
 </main>
+
+<dialog id="ban-dialog" aria-labelledby="ban-title">
+  <form method="dialog" id="ban-form">
+    <h2 id="ban-title">Ban account</h2>
+    <label for="ban-reason">Reason <span style="color:var(--muted);font-weight:400">(optional, they'll see it)</span></label>
+    <textarea id="ban-reason" maxlength="500" placeholder="e.g. Using several accounts to like your own reels"></textarea>
+    <p class="hint">They're signed out straight away and can't sign in again until you unban them.</p>
+    <label class="check" id="ban-reels-wrap"><input type="checkbox" id="ban-reels"><span id="ban-reels-text"></span></label>
+    <div class="dialog-actions">
+      <button type="button" id="ban-cancel">Cancel</button>
+      <button type="submit" id="ban-confirm" class="danger">Ban</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
@@ -221,7 +256,9 @@
       if (r.reel_owner_id) {
         const copiesBtn = el("button", "", "Find copies by this uploader");
         copiesBtn.addEventListener("click", () => showCopies(card, r, copiesBtn));
-        actions.append(copiesBtn);
+        const banBtn = el("button", "danger", r.reel_owner_username ? `Ban @${r.reel_owner_username}` : "Ban uploader");
+        banBtn.addEventListener("click", () => openBan(r.reel_owner_id));
+        actions.append(copiesBtn, banBtn);
       }
       card.append(actions);
       if (!r.reel_id || !r.reel_exists) card.append(el("p", "note", "No live reel is attached. Use “Where” to find it in Discover, then use that reel's Report button. It will show up here with removal buttons."));
@@ -246,6 +283,119 @@
     });
     box.append(grid);
     card.append(box);
+  }
+
+  // ---------- Accounts & bans ----------
+  // Banning happens in the moderate edge function: Supabase stops the account signing in,
+  // the database refuses its requests straight away, and you can remove its reels in one go.
+  let banTarget = null;
+
+  async function findAccount(id) {
+    const { data, error } = await sb.rpc("admin_list_users", { p_query: id });
+    if (error) throw error;
+    const u = (data || []).find((x) => x.id === id);
+    if (!u) throw new Error("That account no longer exists.");
+    return u;
+  }
+
+  async function openBan(userOrId) {
+    let u = userOrId;
+    try { if (typeof u === "string") u = await findAccount(u); } catch (err) { return alert(err.message); }
+    if (u.is_admin) return alert("Moderator accounts can't be banned.");
+    if (u.banned_at) return alert(`@${u.username} is already banned.`);
+    banTarget = u;
+    $("ban-title").textContent = `Ban @${u.username}`;
+    $("ban-reason").value = "";
+    $("ban-reels").checked = false;
+    $("ban-reels-wrap").classList.toggle("hidden", !u.reels);
+    $("ban-reels-text").textContent = `Also remove ${u.reels === 1 ? "their reel" : `all ${u.reels} of their reels`}. Videos are deleted and anyone holding shares is cashed out. This can't be undone.`;
+    $("ban-confirm").disabled = false;
+    $("ban-dialog").showModal();
+    $("ban-reason").focus();
+  }
+
+  async function confirmBan(e) {
+    e.preventDefault();
+    const u = banTarget;
+    const removeReels = $("ban-reels").checked && u.reels > 0;
+    $("ban-confirm").disabled = true;
+    try {
+      const res = await callModerate({ action: "ban", user_id: u.id, note: $("ban-reason").value, remove_reels: removeReels });
+      $("ban-dialog").close();
+      if (removeReels && res.failed) alert(`@${u.username} is banned, but ${res.failed} of their reels couldn't be removed. Open their account and use “Remove reels” to try again.`);
+      await load();
+    } catch (err) {
+      alert(err.message);
+      $("ban-confirm").disabled = false;
+    }
+  }
+
+  async function unban(u, btn) {
+    if (!confirm(`Unban @${u.username}? They'll be able to sign in and use ReelMonkey again. Any reels removed with the ban stay removed.`)) return;
+    btn.disabled = true;
+    try { await callModerate({ action: "unban", user_id: u.id }); await load(); }
+    catch (err) { alert(err.message); btn.disabled = false; }
+  }
+
+  // For a banned account whose reels weren't all removed (or that posted before the ban took effect)
+  async function removeAllReels(u, btn) {
+    if (!confirm(`Remove all ${u.reels} of @${u.username}'s reels? Videos are deleted and anyone holding shares is cashed out. This can't be undone.`)) return;
+    btn.disabled = true;
+    try {
+      const res = await callModerate({ action: "ban", user_id: u.id, note: u.ban_reason, remove_reels: true });
+      if (res.failed) alert(`${res.failed} reels couldn't be removed. Try again in a moment.`);
+      await load();
+    } catch (err) { alert(err.message); btn.disabled = false; }
+  }
+
+  function accountCard(u) {
+    const card = el("article", "card acct");
+    const head = el("div", "head");
+    const title = el("div", "title", "@" + (u.username || "(no username)"));
+    if (u.is_admin) title.append(el("span", "pill", "Moderator"));
+    title.append(u.banned_at ? el("span", "pill red", "Banned") : el("span", "pill ok", "Active"));
+    head.append(title);
+    card.append(head);
+    const d = el("dl");
+    const row = (k, v, cls) => { if (v === null || v === undefined || v === "") return; d.append(el("dt", "", k), el("dd", cls || "", String(v))); };
+    row("Email", u.email);
+    row("Joined", u.created_at ? new Date(u.created_at).toLocaleDateString() : "");
+    row("Reels", u.reels);
+    if (u.banned_at) { row("Banned", fmt(u.banned_at)); row("Reason", u.ban_reason || "No reason given"); }
+    row("Account ID", u.id, "mono");
+    card.append(d);
+    if (!u.is_admin) {
+      const actions = el("div", "actions");
+      if (u.banned_at) {
+        const b = el("button", "", "Unban");
+        b.addEventListener("click", () => unban(u, b));
+        actions.append(b);
+        if (u.reels > 0) {
+          const r = el("button", "danger", "Remove reels");
+          r.addEventListener("click", () => removeAllReels(u, r));
+          actions.append(r);
+        }
+      } else {
+        const b = el("button", "danger", "Ban");
+        b.addEventListener("click", () => openBan(u));
+        actions.append(b);
+      }
+      card.append(actions);
+    }
+    return card;
+  }
+
+  let accountQuery = "";
+  async function loadAccounts() {
+    const { data, error } = await sb.rpc("admin_list_users", { p_query: accountQuery || null });
+    if (error) throw error;
+    const list = $("list");
+    const heading = el("p", "list-title", accountQuery ? `Accounts matching “${accountQuery}”` : "Banned accounts");
+    if (!data.length) {
+      list.replaceChildren(heading, el("div", "empty", accountQuery ? "No accounts match." : "No banned accounts. Search above to find an account to ban."));
+      return;
+    }
+    list.replaceChildren(heading, ...data.map(accountCard));
   }
 
   async function loadPreserved() {
@@ -281,8 +431,10 @@
 
   async function load() {
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+    $("search").classList.toggle("hidden", tab !== "accounts");
     try {
       if (tab === "preserved") return await loadPreserved();
+      if (tab === "accounts") return await loadAccounts();
       const { data, error } = await sb.rpc("admin_list_reports", { p_status: tab });
       if (error) throw error;
       const list = $("list");
@@ -294,6 +446,10 @@
   }
 
   document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => { tab = t.dataset.tab; load(); }));
+  $("search").addEventListener("submit", (e) => { e.preventDefault(); accountQuery = $("search-q").value.trim(); load(); });
+  $("search-q").addEventListener("search", () => { if (!$("search-q").value) { accountQuery = ""; load(); } }); // the ✕ in the box
+  $("ban-form").addEventListener("submit", confirmBan);
+  $("ban-cancel").addEventListener("click", () => $("ban-dialog").close());
 
   (async () => {
     const { data: { session } } = await sb.auth.getSession();
