@@ -176,6 +176,9 @@
   .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem 1.1rem; min-width: 9rem; }
   .stat-label { font-size: .74rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .stat-value { font-family: var(--mono); font-size: 1.45rem; font-weight: 600; letter-spacing: -.02em; margin-top: .2rem; }
+  .cash-btn { display: block; width: 100%; margin-top: .55rem; font: inherit; font-size: .8rem; font-weight: 600; padding: .38rem .6rem; border: 1px solid var(--up); border-radius: 7px; background: var(--up); color: #fff; cursor: pointer; line-height: 1.3; }
+  .cash-btn:hover { background: #15803d; border-color: #15803d; }
+  .cash-btn:disabled { background: var(--bg); border-color: var(--line); color: var(--muted); font-weight: 500; cursor: default; }
 
   .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
   .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); }
@@ -617,7 +620,7 @@
           <p class="page-sub">Your shares and predictions. Open a reel's Trade panel to buy more.</p>
         </div>
         <div class="stat-row">
-          <div class="stat"><div class="stat-label">Balance</div><div class="stat-value" id="balance">$0.00</div></div>
+          <div class="stat"><div class="stat-label">Balance</div><div class="stat-value" id="balance">$0.00</div><button id="daily-cash" class="cash-btn" disabled>+ Add $500</button></div>
           <div class="stat"><div class="stat-label">Shares</div><div class="stat-value" id="holdings">$0.00</div></div>
           <div class="stat"><div class="stat-label">Predictions</div><div class="stat-value" id="bet-holdings">$0.00</div></div>
         </div>
@@ -1006,10 +1009,49 @@
 
   async function loadBalance() {
     if (!currentUser) return;
-    const { data } = await sb.from("profiles").select("username, balance").eq("id", currentUser.id).single();
+    const { data } = await sb.from("profiles").select("username, balance, last_cash_claim").eq("id", currentUser.id).single();
     if (!data) return;
-    profile = { ...(profile || {}), username: data.username, balance: Number(data.balance) };
+    profile = { ...(profile || {}), username: data.username, balance: Number(data.balance), lastCashClaim: data.last_cash_claim };
     setBalance(data.balance);
+    renderCashButton();
+  }
+
+  // ---------- Daily $500 (Portfolio page) ----------
+  // Once per calendar day in UTC; the database enforces it (claim_daily_cash).
+  const utcToday = () => new Date().toISOString().slice(0, 10);
+  const nextUtcMidnight = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); };
+  let cashBusy = false;
+
+  function renderCashButton() {
+    const b = $("daily-cash");
+    if (!profile) { b.disabled = true; b.textContent = "+ Add $500"; return; }
+    const claimed = !!profile.lastCashClaim && profile.lastCashClaim >= utcToday();
+    b.disabled = claimed || cashBusy;
+    if (claimed) {
+      const at = new Date(nextUtcMidnight()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      b.textContent = `Next $500 in ${timeLeft(nextUtcMidnight() - Date.now())}`;
+      b.title = `You can add $500 once a day. It unlocks again at ${at}.`;
+    } else {
+      b.textContent = "+ Add $500";
+      b.title = "Add $500 to your balance. You can do this once a day.";
+    }
+  }
+
+  async function claimDailyCash() {
+    if (!currentUser || cashBusy) return;
+    cashBusy = true;
+    renderCashButton();
+    const { data, error } = await sb.rpc("claim_daily_cash");
+    cashBusy = false;
+    if (error) {
+      toast(error.message, "error");
+      await loadBalance(); // e.g. already claimed in another tab
+      return;
+    }
+    if (profile) profile.lastCashClaim = utcToday();
+    setBalance(data);
+    renderCashButton();
+    toast("$500 added to your balance.", "ok");
   }
 
   // ---------- Signing in & out ----------
@@ -1024,8 +1066,6 @@
     pendingIntent = null;
     showPage(intent ? "discover" : restorePage || "discover");
     restorePage = null;
-    const bonus = await sb.rpc("collect_daily_bonus");
-    if (!bonus.error && Number(bonus.data) > 0) toast(`${money(bonus.data)} daily bonus added to your balance.`, "ok");
     await loadBalance();
     await refreshFeedState();
     if (intent && intent.type === "trade") openTrade(intent.reelId, { follow: true });
@@ -2796,11 +2836,14 @@
     if (page === "portfolio") loadPortfolio();
     else if (!trade.open) loadBalance();
   }, REFRESH_MS);
+  // Keep the "Next $500 in …" countdown current, and unlock the button at midnight UTC
+  setInterval(() => { if (currentUser && page === "portfolio") renderCashButton(); }, 30000);
 
   // ---------- Wiring ----------
   document.querySelectorAll("[data-page]").forEach((b) => b.addEventListener("click", () => showPage(b.dataset.page)));
   $("nav-home").addEventListener("click", () => showPage("discover"));
   $("balance-chip").addEventListener("click", () => showPage("portfolio"));
+  $("daily-cash").addEventListener("click", claimDailyCash);
   $("hdr-login").addEventListener("click", () => goToAuth("login"));
   $("hdr-signup").addEventListener("click", () => goToAuth("signup"));
   $("auth-back").addEventListener("click", () => { pendingIntent = null; showScreen("app"); });
