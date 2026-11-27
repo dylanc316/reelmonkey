@@ -653,7 +653,7 @@
           <p class="page-sub">Post reels and earn from the people who trade them.</p>
         </div>
         <div class="stat-row">
-          <div class="stat"><div class="stat-label">Creator earnings (play money)</div><div class="stat-value gain" id="creator-total">$0.00</div></div>
+          <div class="stat"><div class="stat-label">Creator earnings</div><div class="stat-value gain" id="creator-total">$0.00</div></div>
         </div>
       </div>
       <p class="explainer" id="creator-explainer">When people profit from your reel doing well, by selling its shares at a gain or winning YES bets on it, you earn an extra 10% of their profit. It's paid by ReelMonkey, so it never comes out of traders' winnings, and you can never lose money on your own reels.</p>
@@ -1267,6 +1267,7 @@
 
   // Why this account can't vote on a reel right now, if it can't
   function voteLock(reel) {
+    if (reel.is_mine) return "You can't like or dislike your own reel.";
     if (Number(reel.my_shares) > 0) return "You can't vote on a reel you own shares in. Sell your shares first.";
     if (Number(reel.my_predictions) > 0) return "You can't vote on a reel you have an open bet on. Sell it first or wait for it to resolve.";
     return null;
