@@ -26,6 +26,7 @@
   li { margin-bottom: .4rem; }
   a { color: var(--accent); }
 </style>
+<script src="analytics.js" defer></script>
 </head>
 <body>
 <header><div class="bar">
@@ -44,6 +45,7 @@
     <li><strong>Date of birth:</strong> we ask for it when you sign up to confirm you're old enough to use ReelMonkey. We check it and then discard it; we keep only a record that you met the age requirement.</li>
     <li><strong>Content you upload:</strong> your videos, captions and profile picture.</li>
     <li><strong>Activity on ReelMonkey:</strong> your likes and dislikes, play-money trades and predictions, positions, balance, daily bonuses and creator earnings.</li>
+    <li><strong>Moderation records:</strong> if we ban an account, a record of the ban, when it happened and the reason we gave.</li>
     <li><strong>Reports:</strong> if you submit a report or removal request, the details you provide, such as your name, email, signature and description.</li>
     <li><strong>Technical information:</strong> our service providers automatically receive information such as your IP address and browser details when you use the site, and keep it in logs. For reports, we keep a scrambled (hashed) form of your network address only to limit spam.</li>
   </ul>
@@ -51,8 +53,9 @@
   <h2>How we use it</h2>
   <ul>
     <li>To run your account, show your reels and profile, and process your play-money trades.</li>
-    <li>To keep ReelMonkey safe: preventing abuse (for example, allowing only one account per email inbox), reviewing reports, removing content that breaks our rules or the law, and complying with legal obligations.</li>
+    <li>To keep ReelMonkey safe: preventing abuse (for example, allowing only one account per email inbox), reviewing reports, removing content and banning accounts that break our rules or the law, and complying with legal obligations.</li>
     <li>To contact you about your account or a report you submitted.</li>
+    <li>To understand how many people visit ReelMonkey and which pages they use, and to keep the site fast, using visit statistics that don't identify you.</li>
   </ul>
   <p>We don't sell your personal information, and we don't use it for advertising.</p>
 
@@ -70,6 +73,7 @@
     <li><strong>Supabase:</strong> database, sign-in, profile picture storage and server functions.</li>
     <li><strong>Mux:</strong> video upload, processing and streaming.</li>
     <li><strong>Cloudflare Turnstile:</strong> checks that sign-ups, log-ins and password resets come from a person rather than a bot. On those screens it receives technical information from your browser, such as your IP address and browser details.</li>
+    <li><strong>Cloudflare Web Analytics:</strong> counts visits and measures how fast pages load. It doesn't use cookies or track you across other websites. It receives technical information such as the page address, the site that linked you to it, and your browser and device type.</li>
     <li><strong>Google Fonts</strong> and <strong>jsDelivr:</strong> deliver the fonts and code libraries the site loads, which means your browser contacts their servers.</li>
   </ul>
   <p>We may also disclose information when required by law, for example to respond to valid legal process, or to report child sexual exploitation to the National Center for Missing &amp; Exploited Children as federal law requires.</p>
