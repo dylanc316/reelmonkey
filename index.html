@@ -4,7 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ReelMonkey</title>
-<meta name="description" content="Watch short videos and trade them like stocks. Buy shares, bet on which reels go viral, and earn when people profit on reels you post.">
+<meta name="description" content="Watch short videos and trade them like stocks with play money. Buy shares, bet on which reels go viral, and earn when people profit on reels you post.">
+<!-- Link previews (iMessage, Discord, X, WhatsApp, Slack...). The image must be an absolute URL. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ReelMonkey">
+<meta property="og:title" content="ReelMonkey: trade the reels you scroll">
+<meta property="og:description" content="Buy shares in short videos and bet on which ones go viral. Free to play, with $1,000 in play money to start.">
+<meta property="og:image" content="https://reelmonkey.io/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ReelMonkey: trade the reels you scroll. Buy shares in short videos and bet on which ones go viral.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ReelMonkey: trade the reels you scroll">
+<meta name="twitter:description" content="Buy shares in short videos and bet on which ones go viral. Free to play, with $1,000 in play money to start.">
+<meta name="twitter:image" content="https://reelmonkey.io/og-image.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b0d12'/><path d='M7 21l6-6 4 4 8-9' fill='none' stroke='%2322c55e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -401,6 +415,8 @@
   .prompt-actions { display: grid; gap: .5rem; }
   .prompt-actions button.ghost { width: 100%; padding: .65rem; }
   #ap-close { display: block; margin: .9rem auto 0; color: var(--muted); font-weight: 500; }
+  #banned-notice h3 { margin: 0 0 .4rem; font-size: 1.2rem; letter-spacing: -.02em; }
+  #banned-notice p { margin: 0 0 1.1rem; color: var(--ink-2); font-size: .93rem; overflow-wrap: anywhere; }
 
   .toast {
     position: fixed; left: 50%; bottom: calc(1.25rem + var(--tabbar-h)); z-index: 60; max-width: min(92vw, 440px);
@@ -475,6 +491,7 @@
     .logo-text { display: none; }
   }
 </style>
+<script src="analytics.js" defer></script>
 </head>
 <body>
 
@@ -774,6 +791,13 @@
   </div>
 </dialog>
 
+<dialog id="banned-notice" class="modal" aria-labelledby="bn-title">
+  <h3 id="bn-title">This account has been banned</h3>
+  <p id="banned-reason" class="hidden"></p>
+  <p>You've been signed out and can't sign in to this account. If you think this is a mistake, contact <strong>reelmonkeysupport@gmail.com</strong>.</p>
+  <div class="prompt-actions"><button id="bn-ok" class="primary">OK</button></div>
+</dialog>
+
 <dialog id="auth-prompt" class="modal" aria-labelledby="ap-title">
   <h3 id="ap-title">Create an account to trade</h3>
   <p id="ap-text"></p>
@@ -802,7 +826,30 @@
 
   // Must be read before the Supabase client clears the URL hash
   let recovering = window.location.hash.includes("type=recovery");
-  const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+  const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { fetch: banAwareFetch } }) : null;
+
+  // ---------- Banned accounts ----------
+  // The database refuses every request from a banned account with HTTP 403 and the hint
+  // "account_banned" (details = the moderator's reason). Seeing that anywhere signs the
+  // account out here and explains why. A banned account also can't sign in again.
+  const BANNED_HELP = "If you think this is a mistake, contact reelmonkeysupport@gmail.com.";
+  async function banAwareFetch(input, init) {
+    const res = await fetch(input, init);
+    if (res.status === 403) {
+      res.clone().json().then((j) => { if (j && j.hint === "account_banned") onBanned(j.details); }).catch(() => {});
+    }
+    return res;
+  }
+  let bannedShown = false;
+  function onBanned(reason) {
+    if (bannedShown) return;
+    bannedShown = true;
+    $("banned-reason").textContent = reason ? "Reason: " + reason : "";
+    $("banned-reason").classList.toggle("hidden", !reason);
+    document.querySelectorAll("dialog[open]").forEach((d) => d.close());
+    $("banned-notice").showModal();
+    sb.auth.signOut({ scope: "local" });
+  }
 
   let currentUser = null;
   let profile = null;          // { username, balance }
@@ -1167,7 +1214,9 @@
       }
     } catch (err) {
       let text = err.message;
-      if (/captcha/i.test(err.message)) {
+      if (err.code === "user_banned" || /banned/i.test(err.message)) {
+        text = "This account has been banned. " + BANNED_HELP;
+      } else if (/captcha/i.test(err.message)) {
         text = CAPTCHA_FAILED;
       } else if (mode === "signup" && /Database error|duplicate key/i.test(err.message)) {
         // The database rejected the new account. Usernames are checked above, so it's
@@ -2768,6 +2817,8 @@
 
   $("delete-account").addEventListener("click", deleteAccount);
   $("logout").addEventListener("click", async () => { await sb.auth.signOut(); });
+  $("bn-ok").addEventListener("click", () => $("banned-notice").close());
+  $("banned-notice").addEventListener("close", () => { bannedShown = false; });
   $("video-file").addEventListener("change", pickVideo);
   $("upload-btn").addEventListener("click", postReel);
   $("up-discard").addEventListener("click", () => { discardUpload(formUpload); setUploadMsg("Discarded."); });
