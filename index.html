@@ -114,6 +114,7 @@
   button.primary:hover { background: #262b36; }
   button.primary:disabled { opacity: .55; cursor: wait; }
 
+  .captcha:has(iframe) { margin: 0 0 .75rem; }
   .msg { min-height: 1.3rem; margin: 0 0 .9rem; font-size: .88rem; }
   .msg.error { color: var(--danger); }
   .msg.ok { color: var(--ok); }
@@ -533,6 +534,7 @@
           <input id="password" type="password" autocomplete="current-password" minlength="8">
         </div>
 
+        <div id="captcha" class="captcha"></div>
         <p id="msg" class="msg" role="status" aria-live="polite"></p>
         <button id="submit" class="primary">Create account</button>
 
@@ -790,6 +792,9 @@
   // ---- Paste your own values (Supabase > Project Settings > API) ----
   const SUPABASE_URL = "https://wsripxmargrwopwiqrkd.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzcmlweG1hcmdyd29wd2lxcmtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4ODUxMDgsImV4cCI6MjEwNjQ2MTEwOH0.ho5Shz5eQZDyuiCWwlcd6V8qoc8rrstVXiu_-uFfhzU";
+  // Cloudflare Turnstile site key (Cloudflare dashboard > Turnstile > your widget). It's public.
+  // Until it's filled in, the site runs without the human check.
+  const TURNSTILE_SITE_KEY = "0x4AAAAAAGVMmRNC5T_drgo-";
 
   const $ = (id) => document.getElementById(id);
   const configured = !SUPABASE_URL.startsWith("YOUR_");
@@ -896,6 +901,7 @@
     $("auth-screen").classList.toggle("hidden", name === "app");
     $("auth-view").classList.toggle("hidden", name !== "auth");
     $("recovery-view").classList.toggle("hidden", name !== "recovery");
+    if (name === "auth") loadCaptcha();
     if (name !== "app") { closeTrade(); pauseFeed(); window.scrollTo(0, 0); }
     else if (page === "discover") resumeFeed();
   }
@@ -1014,6 +1020,59 @@
   const SIGNUP_SUB = "You start with $1,000 in play money to buy shares in reels and bet on which ones go viral. Real-money trading is coming to ReelMonkey soon.";
 
   function setMsg(text, kind = "") { $("msg").textContent = text; $("msg").className = "msg " + kind; }
+
+  // ---------- Human check (Cloudflare Turnstile) ----------
+  // Supabase checks the token on sign-up, log-in and password reset once CAPTCHA protection
+  // is on. Most people never see the widget; it only appears if Cloudflare wants a click.
+  const captchaOn = !TURNSTILE_SITE_KEY.startsWith("YOUR_");
+  let captchaWidget = null, captchaToken = null, captchaLoading = false, captchaWaiters = [];
+
+  function loadCaptcha() {
+    if (!captchaOn || captchaLoading) return;
+    captchaLoading = true;
+    window.rmTurnstileReady = () => {
+      captchaWidget = window.turnstile.render("#captcha", {
+        sitekey: TURNSTILE_SITE_KEY,
+        appearance: "interaction-only",
+        callback: (token) => { captchaToken = token; captchaWaiters.splice(0).forEach((done) => done(token)); },
+        "expired-callback": () => { captchaToken = null; },
+        "error-callback": () => { captchaToken = null; }
+      });
+    };
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=rmTurnstileReady";
+    s.async = true;
+    s.onerror = () => { captchaLoading = false; }; // try again next time the form is shown
+    document.head.append(s);
+  }
+
+  // A fresh token, waiting up to 20 seconds for the check to finish
+  function getCaptchaToken() {
+    if (!captchaOn) return Promise.resolve(undefined);
+    loadCaptcha();
+    if (captchaToken) return Promise.resolve(captchaToken);
+    return new Promise((resolve) => {
+      const done = (token) => { clearTimeout(timer); resolve(token); };
+      const timer = setTimeout(() => { captchaWaiters = captchaWaiters.filter((w) => w !== done); resolve(null); }, 20000);
+      captchaWaiters.push(done);
+    });
+  }
+
+  // Each token works once, so get a new one after every attempt
+  function resetCaptcha() {
+    captchaToken = null;
+    if (captchaWidget !== null && window.turnstile) window.turnstile.reset(captchaWidget);
+  }
+
+  const CAPTCHA_FAILED = "We couldn't confirm you're a person. Complete the check above, or reload the page and try again.";
+  const USERNAME_TAKEN = "That username is taken. Try another.";
+  const INBOX_TAKEN = "An account already exists for this email inbox. Versions of an address with a +tag, or Gmail addresses with dots added or removed, count as the same inbox. Log in instead.";
+
+  // true / false, or null if it couldn't be checked
+  async function usernameAvailable(username) {
+    const { data, error } = await sb.rpc("username_available", { p_username: username });
+    return error || typeof data !== "boolean" ? null : data;
+  }
   function setRecoveryMsg(text, kind = "") { $("recovery-msg").textContent = text; $("recovery-msg").className = "msg " + kind; }
 
   function setMode(next) {
@@ -1065,15 +1124,9 @@
 
     if (mode === "forgot") {
       if (!email) return setMsg("Enter your email.", "error");
-      $("submit").disabled = true;
-      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-      $("submit").disabled = false;
-      if (error) return setMsg(error.message, "error");
-      // Same message whether or not the account exists, so emails can't be probed
-      return setMsg("If an account exists for that email, a reset link is on its way.", "ok");
+    } else {
+      if (!email || !password) return setMsg("Enter your email and password.", "error");
     }
-
-    if (!email || !password) return setMsg("Enter your email and password.", "error");
     const birthdate = $("birthdate").value;
     if (mode === "signup") {
       const notEligible = "Sorry, you're not eligible to create an account.";
@@ -1089,23 +1142,44 @@
     $("submit").disabled = true;
     setMsg("");
     try {
-      if (mode === "signup") {
+      if (mode === "signup" && (await usernameAvailable(username)) === false) return setMsg(USERNAME_TAKEN, "error");
+
+      if (captchaOn && !captchaToken) setMsg("Checking you're a person…");
+      const token = await getCaptchaToken();
+      if (captchaOn && !token) return setMsg(CAPTCHA_FAILED, "error");
+      setMsg("");
+
+      if (mode === "forgot") {
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin, captchaToken: token });
+        if (error) throw error;
+        // Same message whether or not the account exists, so emails can't be probed
+        setMsg("If an account exists for that email, a reset link is on its way.", "ok");
+      } else if (mode === "signup") {
         const { data, error } = await sb.auth.signUp({
           email, password,
-          options: { data: { username, birthdate }, emailRedirectTo: returnUrl() }
+          options: { data: { username, birthdate }, emailRedirectTo: returnUrl(), captchaToken: token }
         });
         if (error) throw error;
         if (!data.session) setMsg("Check your email to confirm your account, then log in.", "ok");
       } else {
-        const { error } = await sb.auth.signInWithPassword({ email, password });
+        const { error } = await sb.auth.signInWithPassword({ email, password, options: { captchaToken: token } });
         if (error) throw error;
       }
     } catch (err) {
-      const text = /profiles_username_key|duplicate key|Database error/i.test(err.message)
-        ? "That username is taken. Try another."
-        : err.message;
+      let text = err.message;
+      if (/captcha/i.test(err.message)) {
+        text = CAPTCHA_FAILED;
+      } else if (mode === "signup" && /Database error|duplicate key/i.test(err.message)) {
+        // The database rejected the new account. Usernames are checked above, so it's
+        // either a username taken in the meantime or an email inbox that already has an account.
+        const free = await usernameAvailable(username);
+        text = free === false ? USERNAME_TAKEN
+             : free === true ? INBOX_TAKEN
+             : "We couldn't create your account. Try a different username, or log in if you already have an account.";
+      }
       setMsg(text, "error");
     } finally {
+      resetCaptcha();
       $("submit").disabled = false;
     }
   }
