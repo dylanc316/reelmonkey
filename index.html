@@ -320,6 +320,22 @@
   .info .caption { margin: .4rem 0 0; font-size: .9rem; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; pointer-events: auto; cursor: pointer; }
   .info .caption.open { -webkit-line-clamp: unset; }
 
+  /* First-trade nudge: sits on the reel, above the creator's name */
+  .nudge { pointer-events: auto; position: relative; max-width: 300px; margin-bottom: .75rem; padding: .75rem .85rem .8rem;
+           background: rgba(11,13,18,.72); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+           border: 1px solid rgba(255,255,255,.14); border-radius: 12px; animation: nudge-in .25s ease-out; }
+  @keyframes nudge-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .nudge { animation: none; } }
+  .nudge-q { margin: 0 1.5rem .2rem 0; font-weight: 700; font-size: .95rem; }
+  .nudge-t { margin: 0 0 .65rem; font-size: .84rem; line-height: 1.4; color: rgba(255,255,255,.85); }
+  .nudge-t b { font-family: var(--mono); color: #fff; }
+  .nudge-btn { font: inherit; font-size: .85rem; font-weight: 700; padding: .45rem .85rem; border: 0; border-radius: 8px;
+               background: var(--up-bright); color: #052e16; cursor: pointer; }
+  .nudge-btn:hover { background: #4ade80; }
+  .nudge-x { position: absolute; top: .35rem; right: .4rem; width: 26px; height: 26px; border: 0; border-radius: 50%;
+             background: none; color: rgba(255,255,255,.7); font-size: 1.15rem; line-height: 1; cursor: pointer; }
+  .nudge-x:hover { color: #fff; background: rgba(255,255,255,.12); }
+
   .rail { display: flex; flex-direction: column; align-items: center; gap: 1rem; align-self: flex-end; padding-bottom: .5rem; color: #fff; width: 64px; flex: none; }
   .rail-btn { display: flex; flex-direction: column; align-items: center; gap: .25rem; border: 0; background: none; color: inherit; font: inherit; font-size: .74rem; font-weight: 600; cursor: pointer; padding: 0; text-decoration: none; }
   .rail-btn .ic { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,.12); display: grid; place-items: center; font-size: 1.35rem; transition: background .15s, transform .1s; }
@@ -1364,23 +1380,15 @@
     return slide;
   }
 
-  // Like addCard, but right below a given slide (used for the first-trade nudge)
-  function insertCardAfter(index, title, text, buttonText, onClick) {
-    const node = feedCard(title, text, buttonText, onClick);
-    slides.splice(index + 1, 0, { el: node, id: null, card: true });
-    const after = slides[index + 2];
-    if (after) feed.insertBefore(node, after.el); else feed.append(node);
-    slides.forEach((s, i) => { s.el.dataset.index = String(i); });
-    slideObserver.observe(node);
-  }
-
   // ---------- First-trade nudge ----------
-  // After someone's third reel, if they've never bought shares or a bet, a card right
-  // below the reel they just watched invites them to trade it. At most once a day per browser.
+  // From someone's third reel on, if they've never bought shares or a bet, a small box
+  // appears on the reel they're watching with a "Try your first trade" button.
+  // At most once a day per browser.
   const NUDGE_AFTER = 3;
+  const NUDGE_DELAY_MS = 1500; // let the reel play for a moment first
   const NUDGE_DAY_KEY = "reelmonkey-trade-nudge-day";
   let reelsWatched = 0;
-  let nudgeDone = false, nudgeBusy = false;
+  let nudgeDone = false;
   let hasTraded = null; // null = not checked yet for this account
   const localDay = () => new Date().toLocaleDateString("en-CA");
   function nudgedToday() { try { return localStorage.getItem(NUDGE_DAY_KEY) === localDay(); } catch { return false; } }
@@ -1389,31 +1397,37 @@
     if (slide.counted) return;
     slide.counted = true;
     reelsWatched++;
-    if (nudgeDone || nudgeBusy || reelsWatched < NUDGE_AFTER || nudgedToday()) return;
+    if (nudgeDone || reelsWatched < NUDGE_AFTER || nudgedToday()) return;
     const reel = feedReels[slide.id];
-    if (!reel || reel.is_mine || trade.open) return; // try again on the next reel
-    nudgeBusy = true;
-    try {
-      if (currentUser && hasTraded === null) {
-        const { count, error } = await sb.from("transactions")
-          .select("id", { count: "exact", head: true }).in("kind", ["buy", "bet_buy"]);
-        if (error) return;
-        hasTraded = count > 0;
-      }
-      if (currentUser && hasTraded) { nudgeDone = true; return; }
-      const { data: price, error } = await sb.rpc("get_share_price", { p_reel_id: slide.id });
-      if (error || price == null) return;
-      // Only add it while they're still on this reel, so nothing appears above where they are
-      const at = slides.indexOf(slide);
-      if (at < 0 || at !== activeSlide) return;
-      insertCardAfter(at, "Think it'll blow up?",
-        `This reel is ${money(price)} a share. If it gets more likes than usual for its age, your shares are worth more.`,
-        "Try your first trade", () => openTrade(slide.id));
-      nudgeDone = true;
-      try { localStorage.setItem(NUDGE_DAY_KEY, localDay()); } catch {}
-    } finally {
-      nudgeBusy = false;
+    if (!reel || reel.is_mine) return; // try again on the next reel
+    // Each new reel makes its own attempt; an attempt gives up as soon as its reel isn't on screen
+    await new Promise((r) => setTimeout(r, NUDGE_DELAY_MS));
+    if (slides[activeSlide] !== slide || trade.open) return; // they moved on or are already trading
+    if (currentUser && hasTraded === null) {
+      const { count, error } = await sb.from("transactions")
+        .select("id", { count: "exact", head: true }).in("kind", ["buy", "bet_buy"]);
+      if (error) return;
+      hasTraded = count > 0;
     }
+    if (currentUser && hasTraded) { nudgeDone = true; return; }
+    const { data: price, error } = await sb.rpc("get_share_price", { p_reel_id: slide.id });
+    if (error || price == null || slides[activeSlide] !== slide || nudgeDone) return;
+    showNudge(slide, price);
+    nudgeDone = true;
+    try { localStorage.setItem(NUDGE_DAY_KEY, localDay()); } catch {}
+  }
+
+  function showNudge(slide, price) {
+    const box = el("div", "nudge");
+    const close = el("button", "nudge-x", "×");
+    close.setAttribute("aria-label", "Dismiss");
+    close.addEventListener("click", (e) => { e.stopPropagation(); box.remove(); });
+    const text = el("p", "nudge-t", "This reel is ");
+    text.append(el("b", "", money(price)), " a share. If it gets more likes than usual, your shares go up.");
+    const go = el("button", "nudge-btn", "Try your first trade");
+    go.addEventListener("click", (e) => { e.stopPropagation(); box.remove(); openTrade(slide.id, { follow: true }); });
+    box.append(close, el("p", "nudge-q", "Think it'll blow up?"), text, go);
+    slide.frame.querySelector(".info").prepend(box);
   }
 
   function uploadCta() {
@@ -2042,7 +2056,10 @@
     trade.busy = false;
     if (error) toast(error.message, "error");
     else {
-      if (fn === "buy_shares" || fn === "buy_prediction") hasTraded = true;
+      if (fn === "buy_shares" || fn === "buy_prediction") {
+        hasTraded = true;
+        document.querySelectorAll(".nudge").forEach((n) => n.remove());
+      }
       if (draftKey) delete qtyDraft[draftKey];
       if (okText) toast(okText, "ok");
       if (typeof data === "number" || typeof data === "string") setBalance(data);
